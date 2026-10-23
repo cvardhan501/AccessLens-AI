@@ -7,6 +7,7 @@ guards, redirect verification, and structured reporting.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+import os
 import time
 from typing import Any
 from urllib.parse import urlsplit
@@ -16,6 +17,42 @@ from playwright.sync_api import Error as PlaywrightError, TimeoutError as Playwr
 from .models import ElementNode, ScanReport, ScanSummary, Violation
 from .security import SecurityError, URLValidator
 from .vendor import get_axe_script
+
+
+def _categorize_playwright_error(err: Exception) -> tuple[str, str]:
+    """Inspect Playwright exception to extract a precise error category and user-facing diagnostic."""
+    err_msg = str(err)
+    err_lower = err_msg.lower()
+    if any(
+        phrase in err_lower
+        for phrase in (
+            "executable doesn't exist",
+            "please run the following command to download",
+            "browsertype.launch",
+            "cannot find chrome",
+            "cannot find chromium",
+            "error while loading shared libraries",
+            "no such file or directory",
+        )
+    ):
+        return (
+            "BROWSER_UNAVAILABLE",
+            "Playwright Chromium browser executable is not installed or available in this runtime environment. "
+            f"Diagnostic details: {err_msg[:250]}. "
+            "Playwright requires a headless browser binary to perform DOM rendering and axe-core analysis. "
+            "For local or persistent container hosts (Docker, AWS App Runner, ECS, VM), run 'playwright install chromium' "
+            "or set CHROMIUM_PATH/PLAYWRIGHT_CHROMIUM_PATH. "
+            "Note: Serverless runtimes (such as Vercel Functions) do not include native Linux browser binaries by default.",
+        )
+    if "err_name_not_resolved" in err_lower:
+        return (
+            "DNS_FAILURE",
+            f"Target hostname could not be resolved by browser: {err_msg[:200]}",
+        )
+    return (
+        "EXECUTION_ERROR",
+        f"Browser execution error: {err_msg[:250]}",
+    )
 
 
 class ScanError(RuntimeError):
@@ -37,6 +74,27 @@ class AccessibilityScanner:
         self.max_nodes_per_rule = max_nodes_per_rule
         self.headless = headless
         self._axe_script = get_axe_script()
+
+    def _get_browser_launch_kwargs(self) -> dict[str, Any]:
+        """Assemble browser launch arguments with environment override support and headless flags."""
+        chromium_path = (
+            os.environ.get("CHROMIUM_PATH")
+            or os.environ.get("PLAYWRIGHT_CHROMIUM_PATH")
+            or os.environ.get("CHROME_PATH")
+        )
+        launch_args = [
+            "--disable-gpu",
+            "--no-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-setuid-sandbox",
+        ]
+        kwargs: dict[str, Any] = {
+            "headless": self.headless,
+            "args": launch_args,
+        }
+        if chromium_path:
+            kwargs["executable_path"] = chromium_path
+        return kwargs
 
     def _format_remediation(self, failure_summary: str, rule_help: str) -> str:
         """Derive actionable, clean remediation advice from failure summary and help text."""
@@ -200,15 +258,7 @@ class AccessibilityScanner:
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(
-                    headless=self.headless,
-                    args=[
-                        "--disable-gpu",
-                        "--no-sandbox",
-                        "--disable-dev-shm-usage",
-                        "--disable-setuid-sandbox",
-                    ],
-                )
+                browser = playwright.chromium.launch(**self._get_browser_launch_kwargs())
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 800},
                     user_agent="AccessLens-AI/0.1.0 (+https://github.com/accesslens-ai; accessibility auditor)",
@@ -324,27 +374,27 @@ class AccessibilityScanner:
             )
         except PlaywrightError as pw_err:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
-            err_msg = str(pw_err)
-            category = "DNS_FAILURE" if "ERR_NAME_NOT_RESOLVED" in err_msg else "EXECUTION_ERROR"
+            category, diagnostic = _categorize_playwright_error(pw_err)
             return ScanReport(
                 status="SCAN_ERROR",
                 url=url,
                 final_url=final_navigated_url,
                 timestamp=now_iso,
                 duration_ms=elapsed_ms,
-                error=f"Browser execution error: {err_msg[:250]}",
+                error=diagnostic,
                 error_category=category,
             )
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
+            category, diagnostic = _categorize_playwright_error(exc)
             return ScanReport(
                 status="SCAN_ERROR",
                 url=url,
                 final_url=final_navigated_url,
                 timestamp=now_iso,
                 duration_ms=elapsed_ms,
-                error=f"Unexpected scanner exception ({type(exc).__name__}): {exc}",
-                error_category="EXECUTION_ERROR",
+                error=diagnostic if category == "BROWSER_UNAVAILABLE" else f"Unexpected scanner exception ({type(exc).__name__}): {exc}",
+                error_category=category,
             )
 
     def scan_html(self, html_content: str, base_url: str = "http://localhost") -> ScanReport:
@@ -354,10 +404,7 @@ class AccessibilityScanner:
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(
-                    headless=self.headless,
-                    args=["--disable-gpu", "--no-sandbox"],
-                )
+                browser = playwright.chromium.launch(**self._get_browser_launch_kwargs())
                 page = browser.new_page(viewport={"width": 1280, "height": 800})
                 page.set_default_timeout(int(self.timeout_seconds * 1000))
 
@@ -391,12 +438,13 @@ class AccessibilityScanner:
 
         except Exception as exc:
             elapsed_ms = (time.perf_counter() - start_time) * 1000
+            category, diagnostic = _categorize_playwright_error(exc)
             return ScanReport(
                 status="SCAN_ERROR",
                 url=base_url,
                 final_url=base_url,
                 timestamp=now_iso,
                 duration_ms=elapsed_ms,
-                error=f"HTML scan failed ({type(exc).__name__}): {exc}",
-                error_category="EXECUTION_ERROR",
+                error=diagnostic if category == "BROWSER_UNAVAILABLE" else f"HTML scan failed ({type(exc).__name__}): {exc}",
+                error_category=category,
             )

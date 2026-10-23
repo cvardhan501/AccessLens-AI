@@ -179,3 +179,38 @@ def test_scan_civic_accessible_portal_tested_with_disclaimer_and_incomplete():
     assert "Zero reported violations does not certify complete WCAG compliance" in report.disclaimer
     assert "requires manual verification" in report.disclaimer
 
+
+def test_scanner_handles_missing_chromium_executable_with_clear_diagnostic(monkeypatch):
+    """When Playwright cannot find Chromium, returns BROWSER_UNAVAILABLE with actionable diagnostic."""
+    from playwright.sync_api import Error as PlaywrightError
+    from accesslens.scanner import AccessibilityScanner
+
+    scanner = AccessibilityScanner()
+
+    def mock_launch(*args, **kwargs):
+        raise PlaywrightError(
+            "BrowserType.launch: Executable doesn't exist at "
+            "/home/sbx_user1051/.cache/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-linux64/chrome-headless-shell"
+        )
+
+    class MockChromium:
+        def launch(self, *args, **kwargs):
+            return mock_launch(*args, **kwargs)
+
+    class MockPlaywright:
+        chromium = MockChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("accesslens.scanner.sync_playwright", lambda: MockPlaywright())
+
+    report = scanner.scan_html("<h1>Test</h1>")
+    assert report.status == "SCAN_ERROR"
+    assert report.error_category == "BROWSER_UNAVAILABLE"
+    assert "Playwright Chromium browser executable is not installed" in report.error
+    assert "Vercel Functions" in report.error
+

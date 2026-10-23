@@ -418,6 +418,8 @@
     let remediationText = "";
     if (isSecurity) {
       remediationText = "AccessLens AI blocks connections to loopback (127.0.0.1, localhost), RFC 1918 private subnets (10.x, 172.16.x, 192.168.x), and cloud metadata endpoints (169.254.169.254) to defend internal networks. Please target a public website.";
+    } else if (report.error_category === "BROWSER_UNAVAILABLE") {
+      remediationText = "Playwright Chromium browser binary is not installed in this execution environment. Serverless runtimes (such as Vercel Functions) do not include native Linux browser binaries. Run AccessLens AI locally or on a containerized host (Docker, AWS App Runner, ECS, VM) where Playwright Chromium can be launched.";
     } else if (report.error_category === "DNS_FAILURE") {
       remediationText = "The target domain name could not be resolved by DNS. Please check that the URL hostname is spelled correctly and is active.";
     } else if (report.error_category === "NAVIGATION_TIMEOUT") {
