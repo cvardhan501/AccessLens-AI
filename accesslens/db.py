@@ -9,19 +9,37 @@ from __future__ import annotations
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import json
+import os
 from pathlib import Path
 import sqlite3
 from typing import Any, Generator
 
 from .models import ScanReport, ScanSummary, Violation
 
-DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "accesslens.db"
+_STATIC_DEFAULT_DB_PATH = Path(__file__).resolve().parent.parent / "accesslens.db"
+DEFAULT_DB_PATH = _STATIC_DEFAULT_DB_PATH
+
+
+def _resolve_db_path(db_path: Path | str | None = None) -> Path:
+    """Resolve database path with environment overrides for serverless/local environments."""
+    if db_path:
+        return Path(db_path)
+    # If DEFAULT_DB_PATH was explicitly modified/monkeypatched, honour that
+    if DEFAULT_DB_PATH != _STATIC_DEFAULT_DB_PATH:
+        return Path(DEFAULT_DB_PATH)
+    env_path = os.environ.get("ACCESSLENS_DB_PATH") or os.environ.get("DATABASE_PATH")
+    if env_path:
+        return Path(env_path)
+    # If running in Vercel or Lambda serverless environment with read-only root, use writable /tmp
+    if os.environ.get("VERCEL") == "1" or os.environ.get("AWS_LAMBDA_FUNCTION_NAME"):
+        return Path("/tmp/accesslens.db")
+    return DEFAULT_DB_PATH
 
 
 @contextmanager
 def get_db_connection(db_path: Path | str | None = None) -> Generator[sqlite3.Connection, None, None]:
     """Yield a configured sqlite3 connection with foreign keys and row factory enabled."""
-    target_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+    target_path = _resolve_db_path(db_path)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(target_path), timeout=15.0)
     conn.row_factory = sqlite3.Row
@@ -37,7 +55,7 @@ def get_db_connection(db_path: Path | str | None = None) -> Generator[sqlite3.Co
 
 def init_db(db_path: Path | str | None = None) -> Path:
     """Initialize database tables and indexes if they do not already exist."""
-    target_path = Path(db_path) if db_path else DEFAULT_DB_PATH
+    target_path = _resolve_db_path(db_path)
     with get_db_connection(target_path) as conn:
         cursor = conn.cursor()
         cursor.execute(
