@@ -365,6 +365,8 @@ def test_bedrock_raises_auth_error_when_credentials_missing(monkeypatch):
     monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
     monkeypatch.delenv("AWS_PROFILE", raising=False)
     monkeypatch.delenv("AWS_BEARER_TOKEN_BEDROCK", raising=False)
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", "/nonexistent_credentials_file")
+    monkeypatch.setenv("AWS_CONFIG_FILE", "/nonexistent_config_file")
 
     explainer = BedrockExplainer()
     with pytest.raises(BedrockAuthError, match="AWS credentials not configured"):
@@ -441,6 +443,7 @@ def test_api_config_endpoint_redacts_keys(client, monkeypatch):
 
 def test_api_findings_analyze_unconfigured_graceful_handling(client, monkeypatch):
     """When Decider credentials are not set, endpoint returns 200 with typed unavailable status."""
+    monkeypatch.setenv("LLM_PROVIDER", "disabled")
     monkeypatch.setenv("DECIDER_API_KEY", "")
     monkeypatch.delenv("AWS_ACCESS_KEY_ID", raising=False)
     monkeypatch.delenv("AWS_SECRET_ACCESS_KEY", raising=False)
@@ -474,6 +477,7 @@ def test_api_findings_analyze_unconfigured_graceful_handling(client, monkeypatch
 
 def test_api_findings_analyze_with_mocked_services(client, monkeypatch):
     """POST /api/findings/analyze succeeds with Decider 2B decision and static WCAG guidance."""
+    monkeypatch.setenv("LLM_PROVIDER", "disabled")
     monkeypatch.setenv("DECIDER_API_KEY", "valid_key")
 
     mock_decision = DecisionResult(
@@ -517,7 +521,10 @@ def test_analyze_endpoint_works_without_aws_credentials(client, monkeypatch):
     # Completely purge all AWS environment variables
     for var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_PROFILE", "AWS_DEFAULT_REGION", "AWS_REGION", "AWS_BEARER_TOKEN_BEDROCK"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", "/nonexistent_credentials_file")
+    monkeypatch.setenv("AWS_CONFIG_FILE", "/nonexistent_config_file")
 
+    monkeypatch.setenv("LLM_PROVIDER", "disabled")
     monkeypatch.setenv("DECIDER_API_KEY", "test_hosted_key")
 
     mock_decision = DecisionResult(
@@ -558,6 +565,7 @@ def test_no_bedrock_model_instantiated_during_analyze(client, monkeypatch):
     # Confirm BedrockExplainer is not imported into server module namespace
     assert "BedrockExplainer" not in dir(srv), "BedrockExplainer must not be imported in server.py"
 
+    monkeypatch.setenv("LLM_PROVIDER", "disabled")
     monkeypatch.setenv("DECIDER_API_KEY", "test_key")
 
     mock_decision = DecisionResult(
@@ -775,6 +783,8 @@ def test_analyze_endpoint_bedrock_missing_credentials_fallback(client, monkeypat
     monkeypatch.setenv("DECIDER_API_KEY", "mock_decider_key")
     for var in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_PROFILE", "AWS_BEARER_TOKEN_BEDROCK"):
         monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("AWS_SHARED_CREDENTIALS_FILE", "/nonexistent_credentials_file")
+    monkeypatch.setenv("AWS_CONFIG_FILE", "/nonexistent_config_file")
 
     mock_decision = DecisionResult(
         action="HUMAN_REVIEW",

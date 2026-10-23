@@ -87,11 +87,18 @@ class Settings:
 
     @property
     def has_bedrock_creds(self) -> bool:
-        """Check if AWS credentials exist in environment for Bedrock."""
+        """Check if AWS credentials exist in environment or standard Boto3 credential chain."""
         has_direct = bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
         has_profile = bool(os.environ.get("AWS_PROFILE"))
         has_bearer = bool(os.environ.get("AWS_BEARER_TOKEN_BEDROCK"))
-        return has_direct or has_profile or has_bearer
+        if has_direct or has_profile or has_bearer:
+            return True
+        try:
+            import botocore.session
+            session = botocore.session.get_session()
+            return session.get_credentials() is not None
+        except Exception:
+            return False
 
     @property
     def masked_decider_api_key(self) -> str:

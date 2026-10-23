@@ -272,7 +272,7 @@ async def analyze_finding(payload: AnalyzeFindingRequest):
                         failure_summary=payload.failure_summary,
                         action_decision=decision_data.get("action", "HUMAN_REVIEW"),
                     ),
-                    timeout=10.0,
+                    timeout=25.0,
                 )
                 explanation_data = {
                     "status": "success",

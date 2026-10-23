@@ -38,6 +38,10 @@ accesslens.db
 report*.json
 *.log
 *.png
+!submission/article/cover.png
+!submission/article/img/*.png
+!submission/article/img/**/*.png
 .DS_Store
 Thumbs.db
+
 

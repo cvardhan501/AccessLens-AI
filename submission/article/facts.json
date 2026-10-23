@@ -1,0 +1,138 @@
+{
+  "project_name": "AccessLens AI: Civic Access Auditor",
+  "tagline": "Evidence-Gated Civic Web Accessibility Auditing with Strands Decider 2B Policy Gatekeeping",
+  "repository": {
+    "url": "https://github.com/cvardhan501/AccessLens-AI",
+    "branch": "main",
+    "initial_commit": "506bc07",
+    "license": "Apache-2.0"
+  },
+  "hackathon_classification": {
+    "model_tag": "#strands-decider-2b",
+    "pattern_tag": "#policy",
+    "required_credit": "Built with the AWS User Group Madurai Strands Decider hackathon kit"
+  },
+  "core_stack": {
+    "runtime": "Python 3.12",
+    "web_framework": "FastAPI",
+    "browser_engine": "Playwright (Chromium headless)",
+    "accessibility_engine": "axe-core 4.13.0",
+    "database": "SQLite (WAL mode, parameterized schema in accesslens/db.py)",
+    "decision_model": "Strands Decider 2B (strands-decider-2b-hobson-v19 / qwen3.5-v1-2610)",
+    "decision_endpoint": "POST /v1/decide (AWS User Group Madurai hosted API)"
+  },
+  "decision_seam": {
+    "pattern_file": "accesslens/decider.py",
+    "workflow_file": "accesslens/workflow.py",
+    "questions": {
+      "action": {
+        "type": "choice",
+        "options": [
+          "AUTO_FIX_CANDIDATE",
+          "EXPLAIN_ONLY",
+          "HUMAN_REVIEW"
+        ]
+      },
+      "risk_level": {
+        "type": "score",
+        "scale": [
+          "low",
+          "medium",
+          "high",
+          "critical"
+        ]
+      }
+    },
+    "safety_thresholds": {
+      "confidence_floor": 0.70,
+      "critical_severity_penalty": 0.85
+    },
+    "downstream_branches": [
+      {
+        "action": "AUTO_FIX_CANDIDATE",
+        "workflow": "GENERATE_REMEDIATION",
+        "output": "AdvisoryRemediationPatch (strictly advisory, non-mutating)"
+      },
+      {
+        "action": "EXPLAIN_ONLY",
+        "workflow": "ENRICH_CONTEXT",
+        "output": "CivicContextEnrichmentReport (DOM landmark & container hierarchy)"
+      },
+      {
+        "action": "HUMAN_REVIEW",
+        "workflow": "ESCALATE_HUMAN_REVIEW",
+        "output": "CivicAuditorEscalationTicket (4-step manual assistive technology evaluation protocol)"
+      }
+    ]
+  },
+  "security_safeguards": {
+    "ssrf_protection": "Multi-layered pre-flight DNS and IP validation",
+    "allowed_schemes": ["http", "https"],
+    "blocked_ranges": [
+      "127.0.0.0/8 (IPv4 loopback)",
+      "::1 (IPv6 loopback)",
+      "10.0.0.0/8 (RFC 1918)",
+      "172.16.0.0/12 (RFC 1918)",
+      "192.168.0.0/16 (RFC 1918)",
+      "169.254.169.254 (cloud metadata service)"
+    ],
+    "redirect_revalidation": true,
+    "evidence_sanitization_char_cap": 300,
+    "token_redaction": true
+  },
+  "human_review_safeguards": {
+    "no_production_code_mutation": true,
+    "advisory_disclaimers": true,
+    "wcag_scope_disclosure": "Axe-core identifies a subset of machine-detectable criteria; zero violations does not certify full WCAG compliance",
+    "manual_testing_protocol": [
+      "Screen reader flow verification (NVDA, JAWS, VoiceOver)",
+      "Keyboard-only navigation and focus indicator visibility",
+      "Cognitive plain-language clarity inspection",
+      "200% and 400% zoom reflow verification"
+    ]
+  },
+  "bedrock_status": {
+    "optional": true,
+    "live_path_verified": true,
+    "model_id": "us.amazon.nova-pro-v1:0",
+    "model_name": "Amazon Nova Pro",
+    "region": "us-east-1",
+    "endpoint_tested": "POST /api/findings/analyze",
+    "verified_requests": 1,
+    "observed_latency_seconds": 5.1,
+    "latency_note": "Observed round-trip latency of approximately 5.1 seconds on a single application-level request; explicitly noted as an empirical observation, not a formal performance benchmark.",
+    "policy_gate_result": {
+      "action": "HUMAN_REVIEW",
+      "confidence": 0.1941,
+      "confidence_threshold": 0.70,
+      "gate_status": "Classified as HUMAN_REVIEW at 19.41% confidence, below the 70% threshold; automated code patching locked"
+    },
+    "bedrock_role": "Advisory remediation guidance and contextual explanation; does not override policy gate or mutate code",
+    "fallback_safeguard": "Static WCAG guidance and manual escalation tickets when LLM_PROVIDER=disabled, credentials missing, or on timeout",
+    "note": "One application-level request through POST /api/findings/analyze successfully invoked Amazon Nova Pro (us.amazon.nova-pro-v1:0) in us-east-1. Strands Decider 2B classified the finding as HUMAN_REVIEW at 19.41% confidence while Bedrock generated advisory remediation guidance with an observed latency of ~5.1s (an observation, not a benchmark). Default execution remains offline with LLM_PROVIDER=disabled at zero cloud cost."
+  },
+  "verified_test_suite": {
+    "runner": "pytest",
+    "total_tests": 68,
+    "passed_tests": 68,
+    "failed_tests": 0,
+    "pass_rate": "100%"
+  },
+  "civic_fixtures": {
+    "scholarship_portal": "fixture:civic_scholarship_portal",
+    "accessible_portal": "fixture:civic_accessible_portal"
+  },
+  "benchmark_disclosure": {
+    "formal_benchmark": null,
+    "note": "Single-call response latency on the hosted Decider endpoint reflects internet round-trip to the AWS User Group Madurai hosted server. Similarly, the ~5.1s Bedrock invocation is an empirical single-request observation, not a performance benchmark. No synthetic benchmark numbers or claims."
+  },
+  "deployment_status": {
+    "environment": "Local execution and offline validation",
+    "cloud_deployment": null
+  },
+  "video_status": {
+    "script_file": "docs/DEMO_SCRIPT.md",
+    "target_duration": "< 3 minutes",
+    "url": "https://github.com/cvardhan501/AccessLens-AI"
+  }
+}

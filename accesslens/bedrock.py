@@ -121,8 +121,8 @@ class BedrockExplainer:
 
             # Finite timeouts with zero retries prevent hanging threads
             boto_config = botocore.config.Config(
-                connect_timeout=3,
-                read_timeout=8,
+                connect_timeout=5,
+                read_timeout=25,
                 retries={"max_attempts": 0},
             )
 
