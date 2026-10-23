@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AccessLens AI: Civic Access Auditor — Evidence-Gated Accessibility Agent</title>
+  <meta name="description" content="Evidence-gated accessibility auditing agent for public-service and civic portals, powered by Strands Decider 2B and Playwright Chromium axe-core.">
+  <link rel="stylesheet" href="/static/styles.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏛️</text></svg>">
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main civic audit content</a>
+  <!-- Header / Navigation -->
+  <header class="app-header">
+    <div class="header-inner container">
+      <div class="brand">
+        <div class="logo-icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            <path d="M11 8v6"></path>
+            <path d="M8 11h6"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="brand-title">AccessLens <span class="brand-ai">AI</span></h1>
+          <p class="brand-subtitle">Civic Access Auditor</p>
+        </div>
+      </div>
+
+      <div class="header-badges" aria-label="Engine information">
+        <span class="badge engine-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          axe-core 4.13.0 • Playwright
+        </span>
+        <span class="badge local-badge">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          100% Local • SSRF Guarded
+        </span>
+      </div>
+
+      <div class="header-actions">
+        <button id="history-toggle-btn" class="btn btn-secondary btn-icon-text" aria-label="Open scan history drawer" aria-expanded="false">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          <span>History</span>
+          <span id="history-count-badge" class="pill-count">0</span>
+        </button>
+
+        <button id="theme-toggle-btn" class="btn btn-icon" aria-label="Toggle dark/light theme" title="Toggle theme">
+          <svg id="theme-icon-sun" class="theme-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+          <svg id="theme-icon-moon" class="theme-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="display:none;"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" class="container main-content">
+    <!-- Audit Submission Form Section -->
+    <section class="card audit-card" aria-labelledby="audit-heading">
+      <div class="card-header-row">
+        <div>
+          <h2 id="audit-heading" class="card-heading">Audit a Civic or Public-Service Website</h2>
+          <p class="card-subheading">Submit a public civic URL or evaluate local demo fixtures for full client-side DOM rendering and WCAG 2.0 / 2.1 Level A &amp; AA evaluation.</p>
+        </div>
+      </div>
+
+      <form id="scan-form" class="scan-form" novalidate>
+        <div class="form-row">
+          <div class="input-group url-input-group">
+            <label for="url-input" class="field-label">Target Website URL <span class="required" aria-hidden="true">*</span></label>
+            <div class="input-with-icon">
+              <svg class="input-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+              <input
+                id="url-input"
+                name="url"
+                type="url"
+                placeholder="https://example.com"
+                required
+                autocomplete="url"
+                spellcheck="false"
+                class="form-control"
+              >
+            </div>
+            <p id="url-error-msg" class="field-hint error-hint" role="alert" style="display: none;"></p>
+          </div>
+
+          <div class="input-group timeout-group">
+            <label for="timeout-select" class="field-label">Timeout</label>
+            <select id="timeout-select" class="form-control select-control">
+              <option value="15.0">15 seconds</option>
+              <option value="25.0" selected>25 seconds (recommended)</option>
+              <option value="45.0">45 seconds (slow SPAs)</option>
+              <option value="60.0">60 seconds (heavy apps)</option>
+            </select>
+          </div>
+
+          <div class="submit-group">
+            <button id="scan-submit-btn" type="submit" class="btn btn-primary btn-scan">
+              <span class="btn-spinner" aria-hidden="true" style="display: none;"></span>
+              <svg class="btn-icon-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+              <span id="scan-btn-text">Run Audit</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick civic demo presets -->
+        <div class="preset-links-row" role="group" aria-label="Civic test presets">
+          <span class="preset-label">Civic Presets:</span>
+          <button type="button" class="preset-pill preset-fixture" data-url="fixture:civic_scholarship_portal" title="Pre-packaged local test fixture with intentional real-world civic barriers">
+            <span class="pill-dot pill-dot-warn" aria-hidden="true"></span>
+            Scholarship Portal (Local Fixture — Barriers)
+          </button>
+          <button type="button" class="preset-pill preset-fixture" data-url="fixture:civic_accessible_portal" title="Pre-packaged local test fixture verified against WCAG 2.1 AA">
+            <span class="pill-dot pill-dot-success" aria-hidden="true"></span>
+            Citizen Benefits (Local Fixture — Accessible)
+          </button>
+          <button type="button" class="preset-pill preset-external" data-url="https://www.w3.org/WAI/standards-guidelines/wcag/" title="External Web Accessibility Initiative standards reference">
+            <span class="pill-dot pill-dot-ext" aria-hidden="true"></span>
+            W3C WAI Standards (External Live URL)
+          </button>
+        </div>
+      </form>
+
+      <!-- Prominent WCAG Honesty Disclaimer Callout -->
+      <div class="disclaimer-callout" role="note" aria-label="Accessibility Testing Disclaimer">
+        <div class="disclaimer-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div class="disclaimer-content">
+          <strong>Automated Testing Scope &amp; WCAG Disclaimer:</strong>
+          <span>Automated axe-core tests evaluate a subset of machine-verifiable WCAG digital accessibility criteria (such as missing alt text, contrast violations, and form labels). Zero reported violations does NOT certify complete WCAG compliance. Comprehensive civic accessibility requires human evaluation with assistive technologies (screen readers, keyboard-only navigation).</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scan Progress Live Panel -->
+    <section id="scan-progress-card" class="card progress-card" aria-live="polite" style="display: none;">
+      <div class="progress-header">
+        <div class="pulse-indicator" aria-hidden="true"></div>
+        <div>
+          <h3 class="progress-title">Scanning in progress...</h3>
+          <p id="progress-status-desc" class="progress-desc">Connecting to target URL through headless Chromium...</p>
+        </div>
+        <div class="progress-timer">
+          <span id="progress-timer-display">0.0s</span>
+        </div>
+      </div>
+      <div class="progress-bar-container" role="progressbar" aria-label="Scan progress" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100">
+        <div id="progress-bar-fill" class="progress-bar-fill"></div>
+      </div>
+      <div class="progress-steps-grid">
+        <div class="progress-step-item active" id="pstep-1">
+          <span class="step-num">1</span>
+          <span class="step-text">URL &amp; SSRF Verification</span>
+        </div>
+        <div class="progress-step-item" id="pstep-2">
+          <span class="step-num">2</span>
+          <span class="step-text">Playwright Chromium DOM Render</span>
+        </div>
+        <div class="progress-step-item" id="pstep-3">
+          <span class="step-num">3</span>
+          <span class="step-text">axe-core 4.13.0 Evaluation</span>
+        </div>
+        <div class="progress-step-item" id="pstep-4">
+          <span class="step-num">4</span>
+          <span class="step-text">Structure Findings &amp; Advice</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Error / Blocked Alert Section -->
+    <section id="error-card" class="card error-card" role="alert" style="display: none;">
+      <div class="error-card-inner">
+        <div class="error-badge-row">
+          <span id="error-category-badge" class="badge badge-error">SECURITY_BLOCKED</span>
+          <span id="error-time-badge" class="badge badge-subtle">Just now</span>
+        </div>
+        <h3 id="error-title" class="error-heading">Scan Request Blocked</h3>
+        <p id="error-message" class="error-body-text">An error occurred while attempting to scan the target URL.</p>
+        <div id="error-remediation-box" class="error-remediation-box">
+          <strong>Remediation Tip:</strong>
+          <span id="error-remediation-tip">Ensure the target URL begins with http:// or https:// and targets a publicly reachable hostname. Localhost and private IP addresses are blocked to protect network security.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Scan Results Section -->
+    <section id="results-section" class="results-section" style="display: none;">
+      <!-- Result Top Action Bar -->
+      <div class="card result-banner-card">
+        <div class="result-banner-left">
+          <div class="result-status-pill success" id="result-status-pill">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            <span id="result-status-text">SCAN SUCCESS</span>
+          </div>
+          <div class="result-target-info">
+            <div class="target-url-row">
+              <span class="target-label">Target URL:</span>
+              <a id="result-target-url" class="target-url-link" href="#" target="_blank" rel="noopener noreferrer">https://example.com</a>
+            </div>
+            <div id="result-final-url-row" class="final-url-row" style="display: none;">
+              <span class="final-label">Final destination:</span>
+              <span id="result-final-url" class="final-url-text"></span>
+            </div>
+          </div>
+        </div>
+
+        <div class="result-banner-right">
+          <div class="result-meta-item">
+            <span class="meta-label">Duration</span>
+            <span id="result-duration" class="meta-value">1,420 ms</span>
+          </div>
+          <div class="result-meta-item">
+            <span class="meta-label">Audited At</span>
+            <span id="result-timestamp" class="meta-value">Today</span>
+          </div>
+          <div class="result-actions-group">
+            <button id="download-json-btn" class="btn btn-secondary btn-icon-text" title="Download machine-readable JSON report">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              <span>Download JSON</span>
+            </button>
+            <button id="view-raw-json-btn" class="btn btn-subtle btn-icon-text" title="Inspect raw JSON output">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+              <span>View JSON</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Local Fixture Mode Banner (Rendered when auditing local test fixtures) -->
+      <div id="fixture-mode-banner" class="fixture-banner-callout" style="display: none;" role="status">
+        <div class="fixture-banner-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+        </div>
+        <div class="fixture-banner-text">
+          <strong>Local Civic Fixture Mode Active:</strong>
+          <span id="fixture-mode-desc">This audit evaluated a local pre-packaged test scenario in memory without external network calls. Results reflect controlled fixture conditions, not a live production site scan.</span>
+        </div>
+      </div>
+
+      <!-- Executive Metric Overview Cards -->
+      <div class="metrics-grid" role="region" aria-label="Executive Accessibility Metrics">
+        <div class="metric-card metric-total" id="card-total-violations">
+          <div class="metric-header">
+            <span class="metric-title">Total Violations</span>
+            <span class="metric-icon-badge total" aria-hidden="true">⚠️</span>
+          </div>
+          <div id="metric-total-violations" class="metric-number">0</div>
+          <p class="metric-sub">Confirmed WCAG barriers</p>
+        </div>
+
+        <div class="metric-card metric-critical" id="card-critical">
+          <div class="metric-header">
+            <span class="metric-title">Critical</span>
+            <span class="metric-pill critical">Level A/AA</span>
+          </div>
+          <div id="metric-critical-count" class="metric-number">0</div>
+          <p class="metric-sub">Blocks assistive tech users</p>
+        </div>
+
+        <div class="metric-card metric-serious" id="card-serious">
+          <div class="metric-header">
+            <span class="metric-title">Serious</span>
+            <span class="metric-pill serious">High Impact</span>
+          </div>
+          <div id="metric-serious-count" class="metric-number">0</div>
+          <p class="metric-sub">Severe navigation barriers</p>
+        </div>
+
+        <div class="metric-card metric-moderate" id="card-moderate">
+          <div class="metric-header">
+            <span class="metric-title">Moderate</span>
+            <span class="metric-pill moderate">Medium</span>
+          </div>
+          <div id="metric-moderate-count" class="metric-number">0</div>
+          <p class="metric-sub">Usability friction points</p>
+        </div>
+
+        <div class="metric-card metric-minor" id="card-minor">
+          <div class="metric-header">
+            <span class="metric-title">Minor</span>
+            <span class="metric-pill minor">Low</span>
+          </div>
+          <div id="metric-minor-count" class="metric-number">0</div>
+          <p class="metric-sub">Best practice improvements</p>
+        </div>
+
+        <div class="metric-card metric-passes" id="card-passes">
+          <div class="metric-header">
+            <span class="metric-title">Passed Checks</span>
+            <span class="metric-pill passes">Pass</span>
+          </div>
+          <div id="metric-passes-count" class="metric-number">0</div>
+          <p class="metric-sub">Passed axe-core rules</p>
+        </div>
+
+        <div class="metric-card metric-incomplete" id="card-incomplete">
+          <div class="metric-header">
+            <span class="metric-title">Incomplete</span>
+            <span class="metric-pill incomplete">Review</span>
+          </div>
+          <div id="metric-incomplete-count" class="metric-number">0</div>
+          <p class="metric-sub">Requires manual review</p>
+        </div>
+      </div>
+
+      <!-- Violation Findings Section -->
+      <section class="card findings-card" aria-labelledby="findings-heading">
+        <div class="findings-header">
+          <div>
+            <h2 id="findings-heading" class="findings-title">Violations &amp; Remediation Details</h2>
+            <p id="findings-subtitle" class="findings-subtitle">Showing all detected WCAG rule violations</p>
+          </div>
+          <div class="findings-controls">
+            <!-- Search / Filter input -->
+            <div class="search-box">
+              <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input
+                id="search-input"
+                type="text"
+                placeholder="Filter by rule ID, tag, or selector..."
+                class="form-control search-control"
+                aria-label="Filter violations by rule ID, description, or element"
+              >
+              <button id="search-clear-btn" class="search-clear" aria-label="Clear search" style="display: none;">&times;</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Severity Filter Chips -->
+        <div class="severity-filters-bar" role="group" aria-label="Filter findings by severity">
+          <span class="filter-label">Filter Severity:</span>
+          <button class="filter-chip active" data-severity="all">All (<span id="filter-all-count">0</span>)</button>
+          <button class="filter-chip chip-critical" data-severity="critical">Critical (<span id="filter-critical-count">0</span>)</button>
+          <button class="filter-chip chip-serious" data-severity="serious">Serious (<span id="filter-serious-count">0</span>)</button>
+          <button class="filter-chip chip-moderate" data-severity="moderate">Moderate (<span id="filter-moderate-count">0</span>)</button>
+          <button class="filter-chip chip-minor" data-severity="minor">Minor (<span id="filter-minor-count">0</span>)</button>
+        </div>
+
+        <!-- Findings Accordion Container -->
+        <div id="violations-accordion-container" class="violations-accordion">
+          <!-- Dynamically populated -->
+        </div>
+
+        <!-- Empty state when no violations match filter -->
+        <div id="violations-empty-state" class="empty-state" style="display: none;">
+          <div class="empty-state-icon" aria-hidden="true">🎉</div>
+          <h3 class="empty-state-title">No matching violations found</h3>
+          <p id="empty-state-desc" class="empty-state-text">No accessibility violations match your selected search or severity criteria.</p>
+        </div>
+
+        <!-- Incomplete Checks Section (Manual Review Required) -->
+        <div id="incomplete-checks-section" class="incomplete-checks-section" style="display: none;">
+          <div class="incomplete-section-header">
+            <div>
+              <h3 class="incomplete-section-title">Incomplete Checks (Manual Human Review Required)</h3>
+              <p class="incomplete-section-desc">axe-core identified checks requiring human judgment (such as contrast against gradients, semantic appropriateness, and focus order).</p>
+            </div>
+            <span id="incomplete-section-badge" class="badge badge-warning">0 items</span>
+          </div>
+          <div id="incomplete-accordion-container" class="incomplete-accordion"></div>
+        </div>
+      </section>
+    </section>
+
+    <!-- Empty Initial Dashboard State -->
+    <section id="dashboard-empty-state" class="card initial-empty-card">
+      <div class="empty-hero">
+        <div class="empty-icon-circle" aria-hidden="true">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M2 12h20"/><path d="M20 12v6a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6"/><path d="M12 2v20"/><path d="M12 2a5 5 0 0 1 5 5v5H7V7a5 5 0 0 1 5-5z"/></svg>
+        </div>
+        <h2 class="empty-hero-title">Ready to Audit Web Accessibility</h2>
+        <p class="empty-hero-text">Enter any public website URL above to initiate an automated, deterministic audit using axe-core 4.13.0 inside a real headless Playwright Chromium browser.</p>
+        
+        <div class="feature-highlights-grid">
+          <div class="feature-item">
+            <div class="feature-icon">⚡</div>
+            <h4>Real axe-core 4.13.0</h4>
+            <p>Direct evaluation of rendered DOM, computed styles, and accessibility trees.</p>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">🛡️</div>
+            <h4>Strict SSRF Defenses</h4>
+            <p>Automatic blocking of private networks, RFC 1918 subnets, and AWS metadata.</p>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">📋</div>
+            <h4>Actionable Remediation</h4>
+            <p>Clear, specific guidance and exact HTML snippet evidence for every violation.</p>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">💾</div>
+            <h4>Local History</h4>
+            <p>Persistent SQLite storage for historical audits with zero remote cloud leaks.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Slide-out History Drawer -->
+  <aside id="history-drawer" class="history-drawer" aria-labelledby="history-drawer-title" aria-modal="true" role="dialog" style="display: none;">
+    <div class="history-backdrop" id="history-backdrop"></div>
+    <div class="history-panel">
+      <div class="history-header">
+        <div>
+          <h2 id="history-drawer-title" class="history-title">Local Scan History</h2>
+          <p class="history-sub">Stored in local SQLite database</p>
+        </div>
+        <div class="history-header-actions">
+          <button id="history-clear-btn" class="btn btn-subtle btn-sm" title="Clear all local scan history">Clear All</button>
+          <button id="history-close-btn" class="btn btn-icon btn-sm" aria-label="Close history drawer">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <div id="history-list" class="history-list">
+        <!-- Dynamically populated -->
+      </div>
+
+      <div id="history-empty" class="history-empty" style="display: none;">
+        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        <p>No previous scans found</p>
+        <span>Audits performed will appear here automatically.</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Raw JSON Modal -->
+  <dialog id="json-modal" class="json-modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 class="modal-title">Raw Structured Scan Report JSON</h3>
+        <div class="modal-actions">
+          <button id="modal-copy-json-btn" class="btn btn-secondary btn-sm">Copy JSON</button>
+          <button id="modal-close-btn" class="btn btn-icon btn-sm" aria-label="Close modal">&times;</button>
+        </div>
+      </div>
+      <div class="modal-body">
+        <pre><code id="modal-json-code" class="json-code"></code></pre>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Toast Notification Container -->
+  <div id="toast-container" class="toast-container" aria-live="assertive"></div>
+
+  <!-- Footer -->
+  <footer class="app-footer">
+    <div class="container footer-inner">
+      <p class="footer-left">
+        <strong>AccessLens AI</strong> — Deterministic accessibility auditor powered by Playwright and axe-core.
+      </p>
+      <p class="footer-right">
+        Automated checks detect ~30–50% of WCAG criteria. Manual verification remains essential.
+      </p>
+    </div>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

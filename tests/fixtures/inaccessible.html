@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <style>
+    body {
+      background-color: #ffffff;
+      color: #e5e7eb; /* Severe WCAG AA contrast violation (approx 1.2:1 vs required 4.5:1) */
+      font-family: sans-serif;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <!-- Violation 1: Severe low contrast heading -->
+    <h1 style="color: #e5e7eb; background-color: #ffffff;">Unlabeled Customer Service Portal</h1>
+
+    <!-- Violation 2: Image missing required alt attribute -->
+    <img id="broken-hero" src="hero-graphic.png">
+
+    <div style="margin-top: 16px;">
+      <p style="color: #f3f4f6; background-color: #ffffff;">Please sign up to continue:</p>
+      <!-- Violation 3: Input field without label or aria-label -->
+      <input id="unlabeled-account-input" type="text" name="account_number">
+
+      <!-- Violation 4: Empty button with no accessible text -->
+      <button id="empty-submit-btn" type="submit"></button>
+    </div>
+
+    <!-- Violation 5: Link with no text or accessible label -->
+    <div style="margin-top: 20px;">
+      <a id="empty-external-link" href="https://example.com/more-info"></a>
+    </div>
+  </div>
+</body>
+</html>

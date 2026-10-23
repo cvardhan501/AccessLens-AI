@@ -1,0 +1,43 @@
+# Environment & Credentials
+.env
+.env.*
+.env.backup
+!.env.example
+*credential*
+*token*
+*.pem
+*.key
+*.crt
+
+# Python Virtual Environments
+.venv/
+venv/
+env/
+ENV/
+build/
+dist/
+*.egg-info/
+
+# Python & Test Caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Databases
+*.db
+*.sqlite
+*.sqlite3
+accesslens.db
+
+# Local Artifacts & System Files
+report*.json
+*.log
+*.png
+.DS_Store
+Thumbs.db
+

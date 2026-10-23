@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Civic Citizen Benefits &amp; Social Welfare Portal — State Government</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      color: #0f172a; /* High contrast: 15.3:1 against white */
+      line-height: 1.6;
+    }
+    .skip-link {
+      position: absolute;
+      top: -40px;
+      left: 10px;
+      background: #1e40af;
+      color: #ffffff;
+      padding: 8px 16px;
+      z-index: 100;
+      font-weight: 700;
+      text-decoration: none;
+      border-radius: 4px;
+    }
+    .skip-link:focus {
+      top: 10px;
+    }
+    .banner {
+      background-color: #1e3a8a;
+      color: #ffffff;
+      padding: 24px 32px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 32px auto;
+      background: #ffffff;
+      padding: 36px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+    }
+    .btn-submit-accessible {
+      background-color: #1e40af; /* High contrast: 8.4:1 against white */
+      color: #ffffff;
+      border: 2px solid #1e3a8a;
+      padding: 12px 28px;
+      font-size: 16px;
+      font-weight: 700;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .btn-submit-accessible:focus,
+    .form-input:focus,
+    a:focus {
+      outline: 3px solid #2563eb;
+      outline-offset: 2px;
+    }
+    .form-group {
+      margin-bottom: 24px;
+    }
+    .form-label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: 700;
+      color: #0f172a;
+      font-size: 15px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #475569;
+      border-radius: 6px;
+      font-size: 16px;
+      box-sizing: border-box;
+      color: #0f172a;
+      background-color: #ffffff;
+    }
+    .helper-text {
+      display: block;
+      margin-top: 6px;
+      color: #334155; /* High contrast: 7.2:1 against white */
+      font-size: 14px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    caption {
+      font-weight: 700;
+      text-align: left;
+      margin-bottom: 8px;
+      font-size: 16px;
+      color: #0f172a;
+    }
+    th {
+      background-color: #f1f5f9;
+      color: #0f172a;
+      font-weight: 700;
+      padding: 12px;
+      border: 1px solid #94a3b8;
+      text-align: left;
+    }
+    td {
+      padding: 12px;
+      border: 1px solid #cbd5e1;
+      color: #0f172a;
+    }
+    a {
+      color: #1d4ed8; /* Contrast 6.5:1 against white */
+      font-weight: 600;
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <a href="#main-content" class="skip-link">Skip to main civic content</a>
+
+  <header class="banner">
+    <img id="state-emblem" src="state_civic_emblem.png" alt="Official State Department of Civic Welfare Emblem" width="64" height="64">
+    <div>
+      <h1 style="margin:0; font-size:26px;">State Social Security &amp; Pension Service</h1>
+      <p style="margin:4px 0 0; font-size:15px;">Department of Citizen Welfare &bull; Public Service Verification Portal</p>
+    </div>
+  </header>
+
+  <main id="main-content" class="container">
+    <section>
+      <h2>Senior Citizen Pension &amp; Healthcare Enrollment</h2>
+      <p>Citizens aged 60 and older can apply for monthly social security support and healthcare benefits using the accessible application form below.</p>
+
+      <form id="pension-form" action="/enroll" method="POST">
+        <div class="form-group">
+          <label for="citizen-id-field" class="form-label">Citizen Unique Identifier (Aadhaar / National ID) <span aria-hidden="true">*</span></label>
+          <input id="citizen-id-field" class="form-input" type="text" name="citizen_id" required aria-required="true" aria-describedby="citizen-id-hint" autocomplete="off">
+          <span id="citizen-id-hint" class="helper-text">Enter your 12-digit number without dashes or spaces (e.g. 123456789012).</span>
+        </div>
+
+        <div class="form-group">
+          <label for="full-legal-name" class="form-label">Full Legal Name <span aria-hidden="true">*</span></label>
+          <input id="full-legal-name" class="form-input" type="text" name="legal_name" required aria-required="true" autocomplete="name">
+        </div>
+
+        <div class="form-group">
+          <label for="district-select" class="form-label">Residential Civic District <span aria-hidden="true">*</span></label>
+          <select id="district-select" class="form-input" name="district" required aria-required="true">
+            <option value="">Select your administrative district</option>
+            <option value="madurai">Madurai Metropolitan District</option>
+            <option value="chennai">Chennai Central District</option>
+            <option value="coimbatore">Coimbatore Urban District</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <table id="pension-schedule-table">
+            <caption>Table of Monthly Pension Entitlements by Age Bracket</caption>
+            <thead>
+              <tr>
+                <th scope="col">Age Bracket</th>
+                <th scope="col">Monthly Support (INR)</th>
+                <th scope="col">Healthcare Coverage Tier</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>60 to 69 Years</td>
+                <td>₹2,500 / month</td>
+                <td>Primary Care + Essential Medicines</td>
+              </tr>
+              <tr>
+                <td>70 to 79 Years</td>
+                <td>₹3,500 / month</td>
+                <td>Comprehensive Inpatient + Outpatient</td>
+              </tr>
+              <tr>
+                <td>80 Years &amp; Above</td>
+                <td>₹5,000 / month</td>
+                <td>Comprehensive Care + In-Home Nursing</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="form-group">
+          <p>Please review the full terms: <a href="/guidelines_pension_2026.pdf" aria-label="Download 2026 Citizen Pension and Healthcare Guidelines in PDF format (240 Kilobytes)">Download 2026 Citizen Pension and Healthcare Guidelines (PDF, 240 KB)</a>.</p>
+        </div>
+
+        <div class="form-group" style="margin-top:28px;">
+          <button id="submit-pension-enrollment-btn" class="btn-submit-accessible" type="submit">Submit Pension Enrollment Application</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <footer style="text-align:center; padding:24px; color:#334155; font-size:14px;">
+    <p>&copy; 2026 State Department of Citizen Welfare. All public digital services adhere to WCAG 2.1 Level AA standards.</p>
+  </footer>
+</body>
+</html>

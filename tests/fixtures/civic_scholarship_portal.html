@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>State Civic Scholarship &amp; Educational Grant Portal</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #f8fafc;
+      margin: 0;
+      padding: 0;
+      color: #1e293b;
+    }
+    .banner {
+      background-color: #1e3a8a;
+      color: #ffffff;
+      padding: 20px 32px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .container {
+      max-width: 900px;
+      margin: 32px auto;
+      background: #ffffff;
+      padding: 32px;
+      border-radius: 8px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    /* Intentional Barrier: Low contrast submit button (approx 1.8:1 ratio) */
+    .btn-submit-low-contrast {
+      background-color: #ffffff;
+      color: #93c5fd;
+      border: 1px solid #bfdbfe;
+      padding: 10px 24px;
+      font-size: 16px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    /* Intentional Barrier: Low contrast helper text (approx 1.6:1 ratio) */
+    .helper-text-faded {
+      color: #cbd5e1;
+      font-size: 13px;
+    }
+    .form-group {
+      margin-bottom: 20px;
+    }
+    .form-input {
+      width: 100%;
+      padding: 10px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 15px;
+      box-sizing: border-box;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+    }
+    td {
+      padding: 10px;
+      border: 1px solid #e2e8f0;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header with state emblem -->
+  <header class="banner">
+    <!-- Intentional Barrier 1: Missing alt text on state emblem -->
+    <img id="civic-seal-graphic" src="state_civic_emblem.png" width="64" height="64">
+    <div>
+      <h1 style="margin:0; font-size:24px;">National Higher Education Grant Application</h1>
+      <p style="margin:4px 0 0; font-size:14px; opacity:0.9;">Ministry of Citizen Empowerment &amp; Social Welfare</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section>
+      <h2>2026 Academic Assistance Grant Application</h2>
+      <p>Eligible citizens enrolled in approved post-secondary institutions may apply for merit-cum-means financial aid below.</p>
+
+      <form id="scholarship-form" action="/apply" method="POST">
+        <!-- Intentional Barrier 2: Form input without associated label or aria-label -->
+        <div class="form-group">
+          <p style="margin-bottom:6px; font-weight:600;">Citizen Identity Reference Number</p>
+          <input id="citizen-identity-input" class="form-input" type="text" name="citizen_id">
+          <span class="helper-text-faded">Format: 12-digit national ID</span>
+        </div>
+
+        <!-- Intentional Barrier 3: Annual Household Income input without associated label -->
+        <div class="form-group">
+          <p style="margin-bottom:6px; font-weight:600;">Annual Gross Household Income (INR)</p>
+          <input id="household-income-input" class="form-input" type="number" name="annual_income">
+        </div>
+
+        <!-- Intentional Barrier 4: Unlabelled Icon Search Button -->
+        <div class="form-group" style="display:flex; gap:8px; align-items:center;">
+          <input id="institution-code-input" class="form-input" type="text" name="institution_code">
+          <button id="lookup-institution-btn" type="button" style="padding:10px 16px; cursor:pointer;">
+            <span class="icon-search"></span>
+          </button>
+        </div>
+
+        <!-- Intentional Barrier 5: Table without <th> table headers -->
+        <div class="form-group">
+          <h3>Income Eligibility Schedule</h3>
+          <table id="eligibility-table">
+            <thead>
+              <tr>
+                <th>Household Category</th>
+                <th>Maximum Annual Income</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Category A (Low Income)</td>
+                <td>Up to ₹2,50,000</td>
+                <td>100% Tuition + Stipend</td>
+              </tr>
+              <tr>
+                <td>Category B (Moderate)</td>
+                <td>₹2,50,001 to ₹5,00,000</td>
+                <td>75% Tuition Assistance</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Intentional Barrier 6: Empty link without discernible text -->
+        <div class="form-group">
+          <p>Read the official eligibility criteria:</p>
+          <a id="empty-document-download-link" href="/files/guidelines_2026.pdf" style="display:inline-block; width:20px; height:20px;"></a>
+        </div>
+
+        <!-- Intentional Barrier 7: Low contrast submit button -->
+        <div class="form-group" style="margin-top:28px;">
+          <button id="submit-application-btn" class="btn-submit-low-contrast" type="submit">Submit Scholarship Application</button>
+        </div>
+      </form>
+    </section>
+  </main>
+
+  <footer style="text-align:center; padding:24px; color:#64748b; font-size:13px;">
+    <p>Official Public Service Portal &bull; Department of Education Governance &bull; Confidentiality Assured</p>
+  </footer>
+</body>
+</html>
