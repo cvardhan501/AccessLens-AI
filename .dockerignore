@@ -1,0 +1,43 @@
+# Git metadata
+.git
+.github
+.gitignore
+
+# Environment & Credentials (CRITICAL: never bake into container image)
+.env
+.env.*
+.env.backup
+.env.pre_bedrock
+*credential*
+*token*
+*.pem
+*.key
+*.crt
+
+# Python & Test artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.coverage
+htmlcov/
+.venv/
+venv/
+env/
+
+# Databases & local state
+*.db
+*.sqlite
+*.sqlite3
+accesslens.db
+
+# Screenshots & documentation media
+*.png
+!accesslens/static/**
+!submission/article/**
+*.log
+report*.json
+
+# OS files
+.DS_Store
+Thumbs.db

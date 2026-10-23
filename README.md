@@ -23,6 +23,7 @@ AccessLens AI: Civic Access Auditor is an open-source (Apache-2.0) accessibility
   - [Reusable Decision Pattern Guide (docs/DECISION_PATTERN.md)](docs/DECISION_PATTERN.md)
   - [AWS Builder Center Draft Article (docs/ARTICLE.md)](docs/ARTICLE.md)
   - [3-Minute Video Demonstration Script (docs/DEMO_SCRIPT.md)](docs/DEMO_SCRIPT.md)
+  - [AWS Container Deployment Guide: App Runner & ECS (docs/AWS_CONTAINER_DEPLOYMENT.md)](docs/AWS_CONTAINER_DEPLOYMENT.md)
 
 ---
 
@@ -125,6 +126,7 @@ AccessLens-AI/
 │       └── axe.min.js        # Official axe-core 4.13.0 engine
 ├── docs/
 │   ├── ARTICLE.md            # AWS Builder Center draft article
+│   ├── AWS_CONTAINER_DEPLOYMENT.md # AWS App Runner & Amazon ECS container deployment guide
 │   ├── DECISION_PATTERN.md   # Reusable Strands Decider 2B #policy pattern documentation
 │   └── DEMO_SCRIPT.md        # < 3-minute video demonstration script
 ├── tests/
@@ -139,9 +141,12 @@ AccessLens-AI/
 │   ├── test_scanner.py       # Playwright scanner tests against real HTTP & civic fixtures
 │   ├── test_security.py      # SSRF, scheme, private IP, and redirect guard tests
 │   └── test_server.py        # FastAPI server, fixture serving, & REST API tests
+├── .dockerignore             # Excludes secrets, credentials, and caches from Docker build
 ├── .env.example              # Template environment configuration
 ├── .gitignore                # Git exclusions (strictly excludes .env and sqlite databases)
+├── Dockerfile                # Production container image with Playwright Chromium for AWS
 ├── LICENSE                   # Official Apache-2.0 License
+├── pyproject.toml            # Project metadata and Vercel/packaging configuration
 ├── pytest.ini                # Pytest configuration
 ├── requirements.txt          # Python dependencies
 └── README.md                 # Project documentation and submission guide
