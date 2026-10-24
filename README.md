@@ -22,7 +22,6 @@ AccessLens AI: Civic Access Auditor is an open-source (Apache-2.0) accessibility
 - **Documentation**:
   - [Reusable Decision Pattern Guide (docs/DECISION_PATTERN.md)](docs/DECISION_PATTERN.md)
   - [AWS Builder Center Draft Article (docs/ARTICLE.md)](docs/ARTICLE.md)
-  - [3-Minute Video Demonstration Script (docs/DEMO_SCRIPT.md)](docs/DEMO_SCRIPT.md)
   - [AWS Container Deployment Guide: App Runner & ECS (docs/AWS_CONTAINER_DEPLOYMENT.md)](docs/AWS_CONTAINER_DEPLOYMENT.md)
     
 ---
