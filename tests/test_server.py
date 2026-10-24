@@ -58,6 +58,29 @@ def test_health_check_endpoint(client):
     assert "Axe-core automated accessibility tests" in data["disclaimer"]
 
 
+def test_health_check_does_not_probe_boto_credentials_in_decider_mode(client, monkeypatch):
+    """Health check endpoint must be fast (<100ms) and never invoke botocore credential discovery in decider-only mode."""
+    import botocore.session
+    import time
+
+    def mock_get_credentials(self):
+        raise AssertionError("botocore.session.get_credentials() should NOT be called during /api/health when llm_provider != 'bedrock'")
+
+    monkeypatch.setattr(botocore.session.Session, "get_credentials", mock_get_credentials)
+
+    start = time.perf_counter()
+    resp = client.get("/api/health")
+    elapsed_ms = (time.perf_counter() - start) * 1000
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "healthy"
+    assert data["mode"] == "decider-only"
+    assert data["bedrock_configured"] is False
+    assert data["bedrock_enabled"] is False
+    assert elapsed_ms < 500  # Must be fast to avoid Render 5s healthcheck timeout
+
+
 def test_serve_dashboard_html(client):
     """GET / serves the dashboard HTML with proper semantic tags and branding."""
     resp = client.get("/")

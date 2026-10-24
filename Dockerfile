@@ -12,9 +12,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 WORKDIR /app
 
-# Install curl for container health check
+# Install curl and tini for container health check and PID 1 zombie process reaping
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    tini \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies first for caching
@@ -40,8 +41,11 @@ USER accesslens
 EXPOSE 8000
 
 # Health check verifies the live FastAPI server status
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD curl -f http://localhost:${PORT:-8000}/api/health || exit 1
 
-# Launch FastAPI dashboard with production Uvicorn ASGI server
-CMD ["uvicorn", "accesslens.server:app", "--host", "0.0.0.0", "--port", "8000"]
+# Use tini as PID 1 init process to reap Playwright Chromium zombie processes and forward signals
+ENTRYPOINT ["/usr/bin/tini", "--"]
+
+# Launch FastAPI dashboard with production Uvicorn ASGI server (single worker for 512MB RAM safety)
+CMD ["sh", "-c", "exec uvicorn accesslens.server:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"]

@@ -208,10 +208,23 @@
         body: JSON.stringify({ url: rawUrl, timeout: timeoutVal }),
       });
 
-      const data = await response.json();
+      let data = null;
+      const text = await response.text();
+      try {
+        data = text ? JSON.parse(text) : null;
+      } catch {
+        data = null;
+      }
 
-      if (!response.ok && !data.status) {
-        throw new Error(data.detail || `Server returned error status ${response.status}`);
+      if (!response.ok) {
+        const errorDetail =
+          (data && (data.detail || data.error)) ||
+          `Server returned HTTP ${response.status} (${response.statusText || "Service Unavailable"}). The auditor service may be busy or restarting; please retry shortly.`;
+        throw new Error(errorDetail);
+      }
+
+      if (!data) {
+        throw new Error("Received empty or unparseable response from scanning service.");
       }
 
       finishScanProgress();

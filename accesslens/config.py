@@ -88,6 +88,8 @@ class Settings:
     @property
     def has_bedrock_creds(self) -> bool:
         """Check if AWS credentials exist in environment or standard Boto3 credential chain."""
+        if self.llm_provider != "bedrock":
+            return False
         has_direct = bool(os.environ.get("AWS_ACCESS_KEY_ID") and os.environ.get("AWS_SECRET_ACCESS_KEY"))
         has_profile = bool(os.environ.get("AWS_PROFILE"))
         has_bearer = bool(os.environ.get("AWS_BEARER_TOKEN_BEDROCK"))
@@ -96,6 +98,8 @@ class Settings:
         try:
             import botocore.session
             session = botocore.session.get_session()
+            session.set_config_variable("metadata_service_timeout", 1.0)
+            session.set_config_variable("metadata_service_num_attempts", 1)
             return session.get_credentials() is not None
         except Exception:
             return False
@@ -122,7 +126,7 @@ class Settings:
             "llm_provider": self.llm_provider,
             "aws_region": self.aws_region,
             "bedrock_model_id": self.bedrock_model_id,
-            "bedrock_configured": self.has_bedrock_creds,
+            "bedrock_configured": bedrock_active,
             "bedrock_enabled": bedrock_active,
             "confidence_threshold": self.confidence_threshold,
         }
