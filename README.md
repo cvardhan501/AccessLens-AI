@@ -24,6 +24,19 @@ AccessLens AI: Civic Access Auditor is an open-source (Apache-2.0) accessibility
   - [AWS Builder Center Draft Article (docs/ARTICLE.md)](docs/ARTICLE.md)
   - [3-Minute Video Demonstration Script (docs/DEMO_SCRIPT.md)](docs/DEMO_SCRIPT.md)
   - [AWS Container Deployment Guide: App Runner & ECS (docs/AWS_CONTAINER_DEPLOYMENT.md)](docs/AWS_CONTAINER_DEPLOYMENT.md)
+    
+---
+
+## 🎥 Live Demo Video
+
+**[▶ Watch AccessLens AI — Civic Accessibility Auditing with Strands Decider 2B](https://youtu.be/XqACVSUSZR0)**
+
+The demo showcases browser-based accessibility scanning with Playwright and axe-core, risk-based decision-making using Strands Decider 2B, and policy-governed remediation guidance with human-review safeguards.
+
+> **Safety by design:** AI-generated explanations are advisory. Low-confidence or high-risk findings are routed for review rather than blindly applying changes to live civic websites.
+
+---
+
 
 ---
 
