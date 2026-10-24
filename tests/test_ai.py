@@ -20,6 +20,9 @@ from accesslens.bedrock import (
     BedrockAuthError,
     BedrockError,
     BedrockExplainer,
+    BedrockInvalidModelError,
+    BedrockThrottlingError,
+    BedrockTimeoutError,
     BedrockUnavailableError,
 )
 from accesslens.config import Settings, load_config
@@ -898,6 +901,249 @@ def test_analyze_endpoint_bedrock_timeout_fallback(client, monkeypatch):
         assert data["explanation"]["is_llm_generated"] is False
         assert data["explanation"]["fallback_reason"] == "timeout"
         assert data["static_guidance"]["rule_id"] == "button-name"
+
+
+def test_analyze_endpoint_bedrock_auth_error_fallback(client, monkeypatch):
+    """When AWS credentials or SSO session is expired, endpoint safely returns auth_error fallback."""
+    monkeypatch.setenv("LLM_PROVIDER", "bedrock")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "mock_aws_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "mock_aws_secret")
+    monkeypatch.setenv("DECIDER_API_KEY", "mock_decider_key")
+
+    mock_decision = DecisionResult(
+        action="HUMAN_REVIEW",
+        confidence=0.72,
+        probabilities={"HUMAN_REVIEW": 0.72},
+        risk_level="high",
+        rationale="Human review required.",
+        raw_choice="HUMAN_REVIEW",
+        latency_ms=105.0,
+    )
+
+    with patch.object(AccessibilityDecider, "decide", return_value=mock_decision), \
+         patch("accesslens.bedrock.BedrockExplainer.explain_finding", side_effect=BedrockAuthError("Your session has expired. Please reauthenticate using 'aws login'.")):
+
+        payload = {
+            "rule_id": "image-alt",
+            "impact": "critical",
+            "description": "Images must have alternate text",
+            "target": ["img"],
+            "html": "<img>",
+            "failure_summary": "Missing alt",
+        }
+        resp = client.post("/api/findings/analyze", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["mode"] == "decider-only"
+        assert data["decision"]["action"] == "HUMAN_REVIEW"
+        assert data["explanation"]["status"] == "fallback"
+        assert data["explanation"]["fallback_reason"] == "auth_error"
+        assert "session has expired" in data["explanation"]["error"]
+        assert data["static_guidance"]["rule_id"] == "image-alt"
+
+
+def test_analyze_endpoint_bedrock_invalid_model_fallback(client, monkeypatch):
+    """When Bedrock model ID is invalid or unsupported in region, endpoint safely falls back."""
+    monkeypatch.setenv("LLM_PROVIDER", "bedrock")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "mock_aws_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "mock_aws_secret")
+    monkeypatch.setenv("DECIDER_API_KEY", "mock_decider_key")
+
+    mock_decision = DecisionResult(
+        action="EXPLAIN_ONLY",
+        confidence=0.85,
+        probabilities={"EXPLAIN_ONLY": 0.85},
+        risk_level="medium",
+        rationale="Design explanation required.",
+        raw_choice="EXPLAIN_ONLY",
+        latency_ms=90.0,
+    )
+
+    with patch.object(AccessibilityDecider, "decide", return_value=mock_decision), \
+         patch("accesslens.bedrock.BedrockExplainer.explain_finding", side_effect=BedrockInvalidModelError("ResourceNotFoundException: Model not found")):
+
+        payload = {
+            "rule_id": "color-contrast",
+            "impact": "serious",
+            "description": "Text must have contrast",
+            "target": ["p"],
+            "html": "<p>Low contrast</p>",
+            "failure_summary": "Contrast 2.0:1",
+        }
+        resp = client.post("/api/findings/analyze", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["mode"] == "decider-only"
+        assert data["decision"]["action"] == "EXPLAIN_ONLY"
+        assert data["explanation"]["status"] == "fallback"
+        assert data["explanation"]["fallback_reason"] == "invalid_model_or_region"
+        assert data["static_guidance"]["rule_id"] == "color-contrast"
+
+
+def test_analyze_endpoint_bedrock_throttled_fallback(client, monkeypatch):
+    """When Bedrock returns ThrottlingException, endpoint safely falls back without crashing."""
+    monkeypatch.setenv("LLM_PROVIDER", "bedrock")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "mock_aws_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "mock_aws_secret")
+    monkeypatch.setenv("DECIDER_API_KEY", "mock_decider_key")
+
+    mock_decision = DecisionResult(
+        action="HUMAN_REVIEW",
+        confidence=0.68,
+        probabilities={"HUMAN_REVIEW": 0.68},
+        risk_level="high",
+        rationale="Human review required.",
+        raw_choice="HUMAN_REVIEW",
+        latency_ms=85.0,
+    )
+
+    with patch.object(AccessibilityDecider, "decide", return_value=mock_decision), \
+         patch("accesslens.bedrock.BedrockExplainer.explain_finding", side_effect=BedrockThrottlingError("ThrottlingException: Rate limit exceeded")):
+
+        payload = {
+            "rule_id": "link-name",
+            "impact": "serious",
+            "description": "Links must have discernible text",
+            "target": ["a"],
+            "html": "<a></a>",
+            "failure_summary": "Empty link",
+        }
+        resp = client.post("/api/findings/analyze", json=payload)
+        assert resp.status_code == 200
+        data = resp.json()
+
+        assert data["mode"] == "decider-only"
+        assert data["decision"]["action"] == "HUMAN_REVIEW"
+        assert data["explanation"]["status"] == "fallback"
+        assert data["explanation"]["fallback_reason"] == "throttled"
+        assert data["static_guidance"]["rule_id"] == "link-name"
+
+
+def test_bedrock_explainer_categorizes_session_expired(monkeypatch):
+    """BedrockExplainer maps LoginRefreshRequired or session expired to BedrockAuthError."""
+    cfg = Settings(
+        decider_mode="ugmdu",
+        decider_url="https://decider",
+        decider_api_key="key",
+        llm_provider="bedrock",
+        aws_region="us-east-1",
+        bedrock_model_id="us.amazon.nova-pro-v1:0",
+        bedrock_small_model_id="us.amazon.nova-micro-v1:0",
+        bedrock_medium_model_id="us.amazon.nova-lite-v1:0",
+        bedrock_large_model_id="us.amazon.nova-pro-v1:0",
+    )
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "mock_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "mock_secret")
+
+    explainer = BedrockExplainer(config=cfg)
+
+    with patch("strands.models.BedrockModel"), \
+         patch("strands.Agent", side_effect=RuntimeError("LoginRefreshRequired: Your session has expired. Please reauthenticate using 'aws login'.")):
+        with pytest.raises(BedrockAuthError, match="session has expired"):
+            explainer.explain_finding(
+                rule_id="image-alt",
+                impact="critical",
+                description="Images must have alternate text",
+                target=["img"],
+                html="<img>",
+                failure_summary="Missing alt",
+            )
+
+
+def test_bedrock_explainer_categorizes_invalid_model(monkeypatch):
+    """BedrockExplainer maps ResourceNotFoundException / ValidationException to BedrockInvalidModelError."""
+    cfg = Settings(
+        decider_mode="ugmdu",
+        decider_url="https://decider",
+        decider_api_key="key",
+        llm_provider="bedrock",
+        aws_region="us-east-1",
+        bedrock_model_id="us.amazon.nova-pro-v1:0",
+        bedrock_small_model_id="us.amazon.nova-micro-v1:0",
+        bedrock_medium_model_id="us.amazon.nova-lite-v1:0",
+        bedrock_large_model_id="us.amazon.nova-pro-v1:0",
+    )
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "mock_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "mock_secret")
+
+    explainer = BedrockExplainer(config=cfg)
+
+    with patch("strands.models.BedrockModel"), \
+         patch("strands.Agent", side_effect=Exception("ValidationException: Model id not supported")):
+        with pytest.raises(BedrockInvalidModelError, match="not supported"):
+            explainer.explain_finding(
+                rule_id="image-alt",
+                impact="critical",
+                description="Images must have alternate text",
+                target=["img"],
+                html="<img>",
+                failure_summary="Missing alt",
+            )
+
+
+def test_bedrock_explainer_handles_dictionary_or_unstructured_output(monkeypatch):
+    """BedrockExplainer handles dict output and unstructured string fallback gracefully."""
+    cfg = Settings(
+        decider_mode="ugmdu",
+        decider_url="https://decider",
+        decider_api_key="key",
+        llm_provider="bedrock",
+        aws_region="us-east-1",
+        bedrock_model_id="us.amazon.nova-pro-v1:0",
+        bedrock_small_model_id="us.amazon.nova-micro-v1:0",
+        bedrock_medium_model_id="us.amazon.nova-lite-v1:0",
+        bedrock_large_model_id="us.amazon.nova-pro-v1:0",
+    )
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "mock_key")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "mock_secret")
+
+    explainer = BedrockExplainer(config=cfg)
+
+    # 1. Test dict output
+    mock_agent_dict = MagicMock()
+    mock_agent_result_dict = MagicMock()
+    mock_agent_result_dict.structured_output = {
+        "plain_language_explanation": "Dict explanation",
+        "why_it_matters": "Dict impact",
+        "proposed_remediation": '<img alt="fixed">',
+        "validation_steps": ["Verify in DOM"],
+        "confidence": "high",
+    }
+    mock_agent_dict.return_value = mock_agent_result_dict
+
+    with patch("strands.models.BedrockModel"), patch("strands.Agent", return_value=mock_agent_dict):
+        res = explainer.explain_finding(
+            rule_id="image-alt",
+            impact="critical",
+            description="Images must have alternate text",
+            target=["img"],
+            html="<img>",
+            failure_summary="Missing alt",
+        )
+        assert res["status"] == "success"
+        assert res["plain_language_explanation"] == "Dict explanation"
+        assert res["proposed_remediation"] == '<img alt="fixed">'
+
+    # 2. Test string fallback output
+    mock_agent_str = MagicMock()
+    mock_agent_result_str = MagicMock()
+    mock_agent_result_str.structured_output = None
+    mock_agent_result_str.__str__.return_value = "Unstructured text explanation from model"
+    mock_agent_str.return_value = mock_agent_result_str
+
+    with patch("strands.models.BedrockModel"), patch("strands.Agent", return_value=mock_agent_str):
+        res2 = explainer.explain_finding(
+            rule_id="image-alt",
+            impact="critical",
+            description="Images must have alternate text",
+            target=["img"],
+            html="<img>",
+            failure_summary="Missing alt",
+        )
+        assert res2["status"] == "success"
+        assert "Unstructured text explanation" in res2["plain_language_explanation"]
 
 
 # ==============================================================================

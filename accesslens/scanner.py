@@ -87,6 +87,20 @@ class AccessibilityScanner:
             "--no-sandbox",
             "--disable-dev-shm-usage",
             "--disable-setuid-sandbox",
+            "--no-zygote",
+            "--disable-extensions",
+            "--disable-background-networking",
+            "--disable-background-timer-throttling",
+            "--disable-backgrounding-occluded-windows",
+            "--disable-breakpad",
+            "--disable-component-update",
+            "--disable-domain-reliability",
+            "--disable-sync",
+            "--disable-translate",
+            "--mute-audio",
+            "--no-first-run",
+            "--safebrowsing-disable-auto-update",
+            "--js-flags=--max-old-space-size=256",
         ]
         kwargs: dict[str, Any] = {
             "headless": self.headless,
@@ -255,108 +269,119 @@ class AccessibilityScanner:
             )
 
         final_navigated_url = validated_url
+        browser = None
+        context = None
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(**self._get_browser_launch_kwargs())
-                context = browser.new_context(
-                    viewport={"width": 1280, "height": 800},
-                    user_agent="AccessLens-AI/0.1.0 (+https://github.com/accesslens-ai; accessibility auditor)",
-                    ignore_https_errors=False,
-                )
+                try:
+                    browser = playwright.chromium.launch(**self._get_browser_launch_kwargs())
+                    context = browser.new_context(
+                        viewport={"width": 1280, "height": 800},
+                        user_agent="AccessLens-AI/0.1.0 (+https://github.com/accesslens-ai; accessibility auditor)",
+                        ignore_https_errors=False,
+                    )
 
-                # Route handler for outbound request validation (SSRF and redirect guard)
-                def handle_route(route: Any) -> None:
-                    req_url = route.request.url
-                    try:
-                        # For subresources and redirects, verify scheme and host
-                        parsed = urlsplit(req_url)
-                        if parsed.scheme.lower() in ("http", "https"):
-                            URLValidator.validate_redirect(req_url, allow_local=self.allow_local)
-                        elif parsed.scheme.lower() in ("data:", "blob:"):
-                            pass  # Safe in-memory representations
-                        else:
+                    # Route handler for outbound request validation (SSRF and redirect guard)
+                    def handle_route(route: Any) -> None:
+                        req_url = route.request.url
+                        try:
+                            # For subresources and redirects, verify scheme and host
+                            parsed = urlsplit(req_url)
+                            if parsed.scheme.lower() in ("http", "https"):
+                                URLValidator.validate_redirect(req_url, allow_local=self.allow_local)
+                            elif parsed.scheme.lower() in ("data:", "blob:"):
+                                pass  # Safe in-memory representations
+                            else:
+                                route.abort("blockedbyclient")
+                                return
+                            route.continue_()
+                        except SecurityError:
                             route.abort("blockedbyclient")
-                            return
-                        route.continue_()
-                    except SecurityError:
-                        route.abort("blockedbyclient")
 
-                context.route("**/*", handle_route)
+                    context.route("**/*", handle_route)
 
-                page = context.new_page()
-                page.set_default_timeout(int(self.timeout_seconds * 1000))
+                    page = context.new_page()
+                    page.set_default_timeout(int(self.timeout_seconds * 1000))
 
-                # 2. Navigation with redirect inspection
-                response = page.goto(
-                    validated_url,
-                    wait_until="domcontentloaded",
-                    timeout=int(self.timeout_seconds * 1000),
-                )
+                    # 2. Navigation with redirect inspection
+                    response = page.goto(
+                        validated_url,
+                        wait_until="domcontentloaded",
+                        timeout=int(self.timeout_seconds * 1000),
+                    )
 
-                final_navigated_url = page.url
+                    final_navigated_url = page.url
 
-                # 3. Post-navigation redirect re-validation
-                if final_navigated_url != validated_url:
-                    try:
-                        URLValidator.validate_redirect(final_navigated_url, allow_local=self.allow_local)
-                    except SecurityError as redirect_err:
-                        browser.close()
+                    # 3. Post-navigation redirect re-validation
+                    if final_navigated_url != validated_url:
+                        try:
+                            URLValidator.validate_redirect(final_navigated_url, allow_local=self.allow_local)
+                        except SecurityError as redirect_err:
+                            elapsed_ms = (time.perf_counter() - start_time) * 1000
+                            return ScanReport(
+                                status="SECURITY_BLOCKED",
+                                url=url,
+                                final_url=final_navigated_url,
+                                timestamp=now_iso,
+                                duration_ms=elapsed_ms,
+                                error=f"Unsafe redirect intercepted: {redirect_err}",
+                                error_category="SECURITY_VIOLATION",
+                            )
+
+                    # Verify HTTP response status
+                    if response is not None and response.status >= 400:
+                        status_code = response.status
                         elapsed_ms = (time.perf_counter() - start_time) * 1000
                         return ScanReport(
-                            status="SECURITY_BLOCKED",
+                            status="SCAN_ERROR",
                             url=url,
                             final_url=final_navigated_url,
                             timestamp=now_iso,
                             duration_ms=elapsed_ms,
-                            error=f"Unsafe redirect intercepted: {redirect_err}",
-                            error_category="SECURITY_VIOLATION",
+                            error=f"HTTP server error: target returned HTTP {status_code}",
+                            error_category="HTTP_ERROR",
                         )
 
-                # Verify HTTP response status
-                if response is not None and response.status >= 400:
-                    status_code = response.status
-                    browser.close()
-                    elapsed_ms = (time.perf_counter() - start_time) * 1000
-                    return ScanReport(
-                        status="SCAN_ERROR",
-                        url=url,
-                        final_url=final_navigated_url,
-                        timestamp=now_iso,
-                        duration_ms=elapsed_ms,
-                        error=f"HTTP server error: target returned HTTP {status_code}",
-                        error_category="HTTP_ERROR",
-                    )
+                    # 4. Inject axe-core engine
+                    page.evaluate(self._axe_script)
 
-                # 4. Inject axe-core engine
-                page.evaluate(self._axe_script)
-
-                # 5. Execute axe.run() with standard WCAG 2.0 / 2.1 A and AA tags
-                axe_run_script = """
-                () => {
-                    return new Promise((resolve, reject) => {
-                        if (typeof axe === 'undefined') {
-                            reject(new Error("axe-core library was not loaded properly into page context."));
-                            return;
-                        }
-                        axe.run(
-                            document,
-                            {
-                                runOnly: {
-                                    type: 'tag',
-                                    values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']
-                                }
-                            },
-                            (err, results) => {
-                                if (err) reject(err);
-                                else resolve(results);
+                    # 5. Execute axe.run() with standard WCAG 2.0 / 2.1 A and AA tags
+                    axe_run_script = """
+                    () => {
+                        return new Promise((resolve, reject) => {
+                            if (typeof axe === 'undefined') {
+                                reject(new Error("axe-core library was not loaded properly into page context."));
+                                return;
                             }
-                        );
-                    });
-                }
-                """
-                raw_results = page.evaluate(axe_run_script)
-                browser.close()
+                            axe.run(
+                                document,
+                                {
+                                    runOnly: {
+                                        type: 'tag',
+                                        values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice']
+                                    }
+                                },
+                                (err, results) => {
+                                    if (err) reject(err);
+                                    else resolve(results);
+                                }
+                            );
+                        });
+                    }
+                    """
+                    raw_results = page.evaluate(axe_run_script)
+                finally:
+                    if context is not None:
+                        try:
+                            context.close()
+                        except Exception:
+                            pass
+                    if browser is not None:
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             return self._parse_axe_results(raw_results, url, final_navigated_url, elapsed_ms)
@@ -401,17 +426,21 @@ class AccessibilityScanner:
         """Scan raw HTML string directly in Playwright without network requests."""
         start_time = time.perf_counter()
         now_iso = datetime.now(timezone.utc).isoformat()
+        browser = None
+        context = None
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(**self._get_browser_launch_kwargs())
-                page = browser.new_page(viewport={"width": 1280, "height": 800})
-                page.set_default_timeout(int(self.timeout_seconds * 1000))
+                try:
+                    browser = playwright.chromium.launch(**self._get_browser_launch_kwargs())
+                    context = browser.new_context(viewport={"width": 1280, "height": 800})
+                    page = context.new_page()
+                    page.set_default_timeout(int(self.timeout_seconds * 1000))
 
-                page.set_content(html_content, wait_until="domcontentloaded")
-                page.evaluate(self._axe_script)
+                    page.set_content(html_content, wait_until="domcontentloaded")
+                    page.evaluate(self._axe_script)
 
-                axe_run_script = """
+                    axe_run_script = """
                 () => {
                     return new Promise((resolve, reject) => {
                         axe.run(
@@ -430,8 +459,18 @@ class AccessibilityScanner:
                     });
                 }
                 """
-                raw_results = page.evaluate(axe_run_script)
-                browser.close()
+                    raw_results = page.evaluate(axe_run_script)
+                finally:
+                    if context is not None:
+                        try:
+                            context.close()
+                        except Exception:
+                            pass
+                    if browser is not None:
+                        try:
+                            browser.close()
+                        except Exception:
+                            pass
 
             elapsed_ms = (time.perf_counter() - start_time) * 1000
             return self._parse_axe_results(raw_results, base_url, base_url, elapsed_ms)

@@ -36,10 +36,12 @@ def local_test_server():
 @pytest.fixture
 def client(tmp_path: Path, monkeypatch):
     """Provide a TestClient connected to a clean temporary SQLite database."""
+    from collections import defaultdict
     temp_db_path = tmp_path / "test_server.db"
     init_db(temp_db_path)
     monkeypatch.setattr("accesslens.db.DEFAULT_DB_PATH", temp_db_path)
     monkeypatch.setattr("accesslens.server.STATIC_DIR", Path(__file__).resolve().parent.parent / "accesslens" / "static")
+    monkeypatch.setattr("accesslens.server._ip_request_timestamps", defaultdict(list))
 
     with TestClient(app) as test_client:
         yield test_client
@@ -209,4 +211,116 @@ def test_server_audit_civic_accessible_portal_via_fixture_scheme(client):
     assert data["summary"]["total_violations"] == 0
     assert data["summary"]["passes_count"] >= 30
     assert "Zero reported violations does not certify complete WCAG compliance" in data["disclaimer"]
+
+
+def test_server_scan_semaphore_busy_returns_503(client, monkeypatch):
+    """When scanner concurrency semaphore is exhausted, /api/scan returns 503 JSON error."""
+    import asyncio
+    from accesslens import server
+
+    # Replace semaphore with a locked semaphore (0 available slots)
+    busy_semaphore = asyncio.Semaphore(0)
+    monkeypatch.setattr(server, "SCAN_SEMAPHORE", busy_semaphore)
+
+    # Fast wait_for to prevent test suite delay
+    original_wait_for = asyncio.wait_for
+
+    async def fast_wait_for(coro, timeout):
+        return await original_wait_for(coro, timeout=0.05)
+
+    monkeypatch.setattr(asyncio, "wait_for", fast_wait_for)
+
+    resp = client.post("/api/scan", json={"url": "fixture:civic_accessible_portal"})
+    assert resp.status_code == 503
+    assert resp.headers["content-type"] == "application/json"
+    data = resp.json()
+    assert "busy" in data["detail"].lower()
+
+
+def test_server_fixture_missing_returns_404(client):
+    """Missing fixture returns 404 with clean JSON error."""
+    resp = client.post("/api/scan", json={"url": "fixture:nonexistent_civic_portal"})
+    assert resp.status_code == 404
+    data = resp.json()
+    assert "not found" in data["detail"].lower()
+
+
+def test_server_fixture_dot_dot_traversal_rejected(client):
+    """Relative ../ traversal attempts are rejected with 400 Bad Request."""
+    bad_urls = [
+        "fixture:../../server",
+        "fixture:../server.py",
+        "fixture:..%2F..%2Fserver",
+        "/fixtures/../../server.py",
+    ]
+    for bad_url in bad_urls:
+        resp = client.post("/api/scan", json={"url": bad_url})
+        assert resp.status_code == 400, f"Expected 400 for {bad_url}, got {resp.status_code}"
+        assert "traversal" in resp.json()["detail"].lower()
+
+
+def test_server_fixture_backslash_traversal_rejected(client):
+    """Backslash traversal attempts are rejected with 400 Bad Request."""
+    bad_urls = [
+        r"fixture:..\..\server",
+        r"fixture:subdir\fixture",
+        r"/fixtures/..\server",
+    ]
+    for bad_url in bad_urls:
+        resp = client.post("/api/scan", json={"url": bad_url})
+        assert resp.status_code == 400, f"Expected 400 for {bad_url}, got {resp.status_code}"
+        assert "traversal" in resp.json()["detail"].lower()
+
+
+def test_server_fixture_absolute_path_rejected(client):
+    """Absolute paths are rejected with 400 Bad Request."""
+    bad_urls = [
+        "fixture:/etc/passwd",
+        r"fixture:C:\windows\system32\drivers\etc\hosts",
+        r"fixture:C:/windows/system32/cmd.exe",
+    ]
+    for bad_url in bad_urls:
+        resp = client.post("/api/scan", json={"url": bad_url})
+        assert resp.status_code == 400, f"Expected 400 for {bad_url}, got {resp.status_code}"
+        assert "traversal" in resp.json()["detail"].lower() or "prohibited" in resp.json()["detail"].lower()
+
+
+def test_server_fixture_rejection_does_not_launch_browser(client, monkeypatch):
+    """Rejected fixture paths fail immediately without invoking the browser engine or reading files."""
+    from accesslens.scanner import AccessibilityScanner
+
+    def mock_scan_html(*args, **kwargs):
+        raise AssertionError("AccessibilityScanner.scan_html should NEVER be called on invalid fixture path!")
+
+    monkeypatch.setattr(AccessibilityScanner, "scan_html", mock_scan_html)
+
+    resp = client.post("/api/scan", json={"url": "fixture:../../server"})
+    assert resp.status_code == 400
+    assert "traversal" in resp.json()["detail"].lower()
+
+
+def test_server_fixture_symlink_escape_rejected(client, tmp_path):
+    """Symlink pointing outside FIXTURES_DIR is rejected with 400."""
+    import os
+    from accesslens import server
+
+    fixtures_dir = server.FIXTURES_DIR
+    target_file = Path(__file__).resolve().parent.parent / "README.md"
+    symlink_path = fixtures_dir / "test_symlink_escape.html"
+
+    try:
+        try:
+            symlink_path.symlink_to(target_file)
+        except (OSError, NotImplementedError) as exc:
+            pytest.skip(f"Symlink creation not supported without elevated permissions on this OS: {exc}")
+
+        resp = client.post("/api/scan", json={"url": "fixture:test_symlink_escape"})
+        assert resp.status_code == 400
+        assert "outside authorized fixtures" in resp.json()["detail"].lower() or "traversal" in resp.json()["detail"].lower()
+    finally:
+        if symlink_path.is_symlink() or symlink_path.exists():
+            try:
+                symlink_path.unlink()
+            except OSError:
+                pass
 

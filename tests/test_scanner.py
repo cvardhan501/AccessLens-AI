@@ -3,9 +3,12 @@
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import threading
+from unittest.mock import MagicMock
 import pytest
+from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 
 from accesslens.scanner import AccessibilityScanner
+from accesslens.security import SecurityError
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
@@ -214,3 +217,177 @@ def test_scanner_handles_missing_chromium_executable_with_clear_diagnostic(monke
     assert "Playwright Chromium browser executable is not installed" in report.error
     assert "Vercel Functions" in report.error
 
+
+def test_scan_url_guarantees_cleanup_on_navigation_timeout(monkeypatch):
+    """When navigation times out, context.close() and browser.close() are guaranteed."""
+    mock_browser = MagicMock()
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+
+    mock_browser.new_context.return_value = mock_context
+    mock_context.new_page.return_value = mock_page
+    mock_page.goto.side_effect = PlaywrightTimeoutError("Navigation timeout of 25000ms exceeded")
+
+    class MockChromium:
+        def launch(self, *args, **kwargs):
+            return mock_browser
+
+    class MockPlaywright:
+        chromium = MockChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("accesslens.scanner.sync_playwright", lambda: MockPlaywright())
+
+    scanner = AccessibilityScanner(allow_local=True)
+    report = scanner.scan_url("https://example.com")
+
+    assert report.status == "SCAN_ERROR"
+    assert report.error_category == "NAVIGATION_TIMEOUT"
+    assert mock_context.close.call_count == 1
+    assert mock_browser.close.call_count == 1
+
+
+def test_scan_url_guarantees_cleanup_on_http_server_error(monkeypatch):
+    """When target returns HTTP 500, context.close() and browser.close() are guaranteed."""
+    mock_browser = MagicMock()
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+    mock_response = MagicMock()
+    mock_response.status = 500
+
+    mock_browser.new_context.return_value = mock_context
+    mock_context.new_page.return_value = mock_page
+    mock_page.url = "https://example.com"
+    mock_page.goto.return_value = mock_response
+
+    class MockChromium:
+        def launch(self, *args, **kwargs):
+            return mock_browser
+
+    class MockPlaywright:
+        chromium = MockChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("accesslens.scanner.sync_playwright", lambda: MockPlaywright())
+
+    scanner = AccessibilityScanner(allow_local=True)
+    report = scanner.scan_url("https://example.com")
+
+    assert report.status == "SCAN_ERROR"
+    assert report.error_category == "HTTP_ERROR"
+    assert "HTTP 500" in report.error
+    assert mock_context.close.call_count == 1
+    assert mock_browser.close.call_count == 1
+
+
+def test_scan_url_guarantees_cleanup_on_unsafe_redirect(monkeypatch):
+    """When redirect validation fails, context.close() and browser.close() are guaranteed."""
+    mock_browser = MagicMock()
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+
+    mock_browser.new_context.return_value = mock_context
+    mock_context.new_page.return_value = mock_page
+    mock_page.url = "http://127.0.0.1:8080/internal"
+    mock_page.goto.return_value = MagicMock(status=200)
+
+    class MockChromium:
+        def launch(self, *args, **kwargs):
+            return mock_browser
+
+    class MockPlaywright:
+        chromium = MockChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("accesslens.scanner.sync_playwright", lambda: MockPlaywright())
+    monkeypatch.setattr("accesslens.security.URLValidator.validate_redirect", MagicMock(side_effect=SecurityError("Blocked redirect")))
+
+    scanner = AccessibilityScanner(allow_local=False)
+    report = scanner.scan_url("https://example.com")
+
+    assert report.status == "SECURITY_BLOCKED"
+    assert report.error_category == "SECURITY_VIOLATION"
+    assert mock_context.close.call_count == 1
+    assert mock_browser.close.call_count == 1
+
+
+def test_scan_html_guarantees_cleanup_on_evaluation_error(monkeypatch):
+    """When axe-core evaluation fails in scan_html, context and browser are cleanly closed."""
+    mock_browser = MagicMock()
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+
+    mock_browser.new_context.return_value = mock_context
+    mock_context.new_page.return_value = mock_page
+    mock_page.evaluate.side_effect = Exception("Evaluation failed: JavaScript heap out of memory")
+
+    class MockChromium:
+        def launch(self, *args, **kwargs):
+            return mock_browser
+
+    class MockPlaywright:
+        chromium = MockChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("accesslens.scanner.sync_playwright", lambda: MockPlaywright())
+
+    scanner = AccessibilityScanner()
+    report = scanner.scan_html("<h1>Test</h1>")
+
+    assert report.status == "SCAN_ERROR"
+    assert "JavaScript heap out of memory" in report.error
+    assert mock_context.close.call_count == 1
+    assert mock_browser.close.call_count == 1
+
+
+def test_scan_url_cleanup_swallows_browser_close_exception_safely(monkeypatch):
+    """If browser.close() raises an exception during cleanup, it is handled without crashing."""
+    mock_browser = MagicMock()
+    mock_context = MagicMock()
+    mock_page = MagicMock()
+
+    mock_browser.new_context.return_value = mock_context
+    mock_context.new_page.return_value = mock_page
+    mock_browser.close.side_effect = RuntimeError("Browser connection already terminated")
+    mock_page.goto.side_effect = PlaywrightTimeoutError("Navigation timeout")
+
+    class MockChromium:
+        def launch(self, *args, **kwargs):
+            return mock_browser
+
+    class MockPlaywright:
+        chromium = MockChromium()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    monkeypatch.setattr("accesslens.scanner.sync_playwright", lambda: MockPlaywright())
+
+    scanner = AccessibilityScanner(allow_local=True)
+    report = scanner.scan_url("https://example.com")
+
+    assert report.status == "SCAN_ERROR"
+    assert report.error_category == "NAVIGATION_TIMEOUT"

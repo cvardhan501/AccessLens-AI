@@ -7,6 +7,7 @@ examples without claiming live verification or modifying target sites.
 
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 from pydantic import BaseModel, Field
@@ -14,17 +15,31 @@ from pydantic import BaseModel, Field
 from .config import Settings, load_config
 from .decider import sanitize_html_evidence
 
+logger = logging.getLogger("accesslens.bedrock")
+
 
 class BedrockError(Exception):
     """Base error for Amazon Bedrock explanation service."""
 
 
 class BedrockAuthError(BedrockError):
-    """Raised when AWS credentials or IAM permissions are missing."""
+    """Raised when AWS credentials, SSO tokens, or session tokens are missing or expired."""
 
 
 class BedrockAccessDeniedError(BedrockAuthError):
     """Raised when AWS IAM permissions are missing or account verification is pending."""
+
+
+class BedrockInvalidModelError(BedrockError):
+    """Raised when the specified model ID or inference profile is not found or unsupported in the region."""
+
+
+class BedrockThrottlingError(BedrockError):
+    """Raised when Bedrock API rate limit or quota is exceeded."""
+
+
+class BedrockTimeoutError(BedrockError):
+    """Raised when the connection or read timeout to Bedrock expires."""
 
 
 class BedrockUnavailableError(BedrockError):
@@ -146,12 +161,24 @@ class BedrockExplainer:
         except Exception as exc:
             err_msg = str(exc)
             lower_msg = err_msg.lower()
-            if any(term in lower_msg for term in ("accessdenied", "verification", "not authorized")):
+            if any(term in lower_msg for term in ("accessdenied", "verification", "not authorized", "is not authorized")):
+                logger.warning("Amazon Bedrock access denied or account verification pending: %s", err_msg)
                 raise BedrockAccessDeniedError(
                     f"Bedrock access denied or account verification pending: {err_msg}"
                 ) from exc
-            if any(term in lower_msg for term in ("security token", "credentials", "unauthorized")):
+            if any(term in lower_msg for term in ("security token", "credentials", "unauthorized", "expired", "loginrefreshrequired", "reauthenticate", "nocredentialserror")):
+                logger.warning("Amazon Bedrock authentication error (session expired or invalid credentials): %s", err_msg)
                 raise BedrockAuthError(f"Bedrock authentication error: {err_msg}") from exc
+            if any(term in lower_msg for term in ("resourcenotfound", "validationexception", "model not found", "unknown model", "inference profile", "unsupported model", "invalid model")):
+                logger.warning("Amazon Bedrock model or region error: %s", err_msg)
+                raise BedrockInvalidModelError(f"Bedrock model or region error: {err_msg}") from exc
+            if any(term in lower_msg for term in ("throttling", "toomanyrequests", "rate limit", "limit exceeded", "requestlimitexceeded")):
+                logger.warning("Amazon Bedrock rate limit exceeded: %s", err_msg)
+                raise BedrockThrottlingError(f"Bedrock rate limit exceeded: {err_msg}") from exc
+            if any(term in lower_msg for term in ("timeout", "timed out", "readtimeout", "connecttimeout")):
+                logger.warning("Amazon Bedrock timeout error: %s", err_msg)
+                raise BedrockTimeoutError(f"Bedrock request timed out: {err_msg}") from exc
+            logger.warning("Amazon Bedrock service error: %s", err_msg)
             raise BedrockUnavailableError(f"Bedrock service error: {err_msg}") from exc
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -159,6 +186,8 @@ class BedrockExplainer:
         output = result.structured_output
         if isinstance(output, AccessibilityExplanation):
             data = output.model_dump()
+        elif isinstance(output, dict):
+            data = dict(output)
         elif hasattr(output, "__dict__"):
             data = dict(output.__dict__)
         else:

@@ -1152,9 +1152,20 @@
     } else if (explanation.status === "fallback") {
       noticeIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`;
       noticeTitle = "Amazon Bedrock Fallback Active:";
-      const reasonMsg = explanation.fallback_reason === "access_denied_or_verification_pending"
-        ? "AWS account verification is pending or model access is unverified."
-        : (explanation.fallback_reason === "timeout" ? "Request timed out." : "Bedrock service was unreachable.");
+      let reasonMsg = "Bedrock service error.";
+      if (explanation.fallback_reason === "auth_error") {
+        reasonMsg = "AWS session expired or credentials invalid. Reauthenticate with 'aws login' or set AWS_ACCESS_KEY_ID in .env.";
+      } else if (explanation.fallback_reason === "access_denied_or_verification_pending") {
+        reasonMsg = "AWS account verification is pending or model access is unverified.";
+      } else if (explanation.fallback_reason === "invalid_model_or_region") {
+        reasonMsg = "Configured Bedrock model or inference profile is unavailable in this region.";
+      } else if (explanation.fallback_reason === "throttled") {
+        reasonMsg = "Bedrock request limit exceeded (throttled).";
+      } else if (explanation.fallback_reason === "timeout") {
+        reasonMsg = "Request timed out.";
+      } else if (explanation.fallback_reason === "service_error") {
+        reasonMsg = "Bedrock service was unreachable.";
+      }
       noticeBody = `${reasonMsg} Safely defaulted to deterministic static WCAG guidance without disrupting Decider policy.`;
     } else if (explanation.status === "unconfigured") {
       noticeTitle = "Amazon Bedrock Unconfigured:";
@@ -1167,6 +1178,15 @@
         <strong>${escapeHtml(noticeTitle)}</strong>
         <span>${escapeHtml(noticeBody)}</span>
       </div>
+      ${
+        explanation.error
+          ? `
+        <div class="notice-error-detail" style="margin: 0.35rem 0 0.5rem 1.6rem; font-size: 0.75rem; color: #fca5a5; font-family: monospace; word-break: break-all;">
+          ${escapeHtml(explanation.error)}
+        </div>
+      `
+          : ""
+      }
       <div class="ai-advisory-note">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
         <span>Advisory suggestion only. No website code has been modified. Automated audits do not certify full WCAG compliance.</span>

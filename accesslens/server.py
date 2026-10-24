@@ -12,10 +12,14 @@ from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 import json
+import logging
 import os
 from pathlib import Path
 import time
 from typing import Any
+from urllib.parse import unquote
+
+logger = logging.getLogger("accesslens.server")
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,7 +42,7 @@ STATIC_DIR.mkdir(parents=True, exist_ok=True)
 FIXTURES_DIR = Path(__file__).resolve().parent.parent / "tests" / "fixtures"
 
 # Concurrency & Rate Limiting Controls
-MAX_CONCURRENT_SCANS = 2
+MAX_CONCURRENT_SCANS = int(os.environ.get("MAX_CONCURRENT_SCANS", "1"))
 SCAN_SEMAPHORE = asyncio.Semaphore(MAX_CONCURRENT_SCANS)
 
 RATE_LIMIT_WINDOW_SECONDS = 60.0
@@ -112,18 +116,80 @@ async def serve_dashboard():
     return HTMLResponse(content=index_file.read_text(encoding="utf-8"))
 
 
+def resolve_secure_fixture_path(fixture_name_or_url: str) -> tuple[Path, str]:
+    """Safely resolve a civic fixture candidate path with strict directory containment.
+
+    Enforces that the resolved target:
+    1. Resides strictly within FIXTURES_DIR.resolve() using Path.is_relative_to().
+    2. Does not follow symlinks outside the fixtures root.
+    3. Prohibits directory traversal ('..', backslashes, absolute paths, null bytes).
+    4. Is a regular file (not a directory or special device).
+
+    Returns (resolved_file_path, fixture_filename).
+    Raises HTTPException(400) on traversal/malformed input, or HTTPException(404) if not found.
+    """
+    root_dir = FIXTURES_DIR.resolve()
+
+    # Extract raw identifier from fixture: scheme or /fixtures/ URL segment
+    raw = fixture_name_or_url.strip()
+    if raw.startswith("fixture:"):
+        raw = raw[len("fixture:"):].strip()
+    elif "/fixtures/" in raw:
+        raw = raw.split("/fixtures/")[-1].strip()
+
+    # URL decode to catch encoded traversals like %2e%2e or %2f
+    decoded = unquote(raw).strip()
+
+    if "\0" in decoded:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid fixture path: null byte detected.",
+        )
+
+    # Reject path traversal tokens and absolute paths explicitly
+    if (
+        ".." in decoded
+        or "/" in decoded
+        or "\\" in decoded
+        or (len(decoded) >= 2 and decoded[1] == ":")
+        or decoded.startswith("/")
+        or decoded.startswith("\\")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid fixture path '{decoded}': directory traversal is prohibited.",
+        )
+
+    safe_filename = decoded if decoded.endswith(".html") else f"{decoded}.html"
+
+    # Construct and resolve candidate path to canonical form (resolving symlinks)
+    candidate_path = (root_dir / safe_filename).resolve()
+
+    # Strict containment verification using Path.is_relative_to (Python 3.9+)
+    try:
+        is_contained = candidate_path.is_relative_to(root_dir) and candidate_path != root_dir
+    except (ValueError, TypeError):
+        is_contained = False
+
+    if not is_contained:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid fixture path: target is outside authorized fixtures root.",
+        )
+
+    if not candidate_path.exists() or not candidate_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Local civic fixture '{safe_filename}' not found.",
+        )
+
+    return candidate_path, safe_filename
+
+
 @app.get("/fixtures/{fixture_name}", response_class=HTMLResponse)
 async def serve_fixture(fixture_name: str):
     """Serve safe local test fixtures for demonstration and offline auditing."""
-    safe_name = Path(fixture_name).name
-    if not safe_name.endswith(".html"):
-        safe_name = f"{safe_name}.html"
-    target_path = FIXTURES_DIR / safe_name
-    if not target_path.exists() or not target_path.is_file():
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Fixture '{safe_name}' not found.",
-        )
+    target_path, _ = resolve_secure_fixture_path(fixture_name)
     return HTMLResponse(content=target_path.read_text(encoding="utf-8"))
 
 
@@ -251,6 +317,9 @@ async def analyze_finding(payload: AnalyzeFindingRequest):
                 BedrockError,
                 BedrockAccessDeniedError,
                 BedrockAuthError,
+                BedrockInvalidModelError,
+                BedrockThrottlingError,
+                BedrockTimeoutError,
             )
 
             explainer = BedrockExplainer(config=cfg)
@@ -287,10 +356,11 @@ async def analyze_finding(payload: AnalyzeFindingRequest):
                     "latency_ms": bedrock_res.get("latency_ms", 0.0),
                     "is_llm_generated": True,
                 }
-            except asyncio.TimeoutError:
+            except (asyncio.TimeoutError, BedrockTimeoutError) as b_err:
+                logger.warning("Amazon Bedrock explanation timed out: %s", b_err)
                 explanation_data = {
                     "status": "fallback",
-                    "plain_language_explanation": "Amazon Bedrock explanation timed out (10s limit exceeded); showing deterministic static WCAG guidance.",
+                    "plain_language_explanation": "Amazon Bedrock explanation timed out; showing deterministic static WCAG guidance.",
                     "why_it_matters": static_guidance.get("summary", ""),
                     "proposed_remediation": static_guidance.get("standard_fix", ""),
                     "validation_steps": [static_guidance.get("verification_step", "")],
@@ -299,9 +369,10 @@ async def analyze_finding(payload: AnalyzeFindingRequest):
                     "provider": "static_fallback",
                     "is_llm_generated": False,
                     "fallback_reason": "timeout",
-                    "error": "Bedrock request exceeded 10.0s timeout limit.",
+                    "error": "Bedrock request exceeded timeout limit.",
                 }
             except BedrockAccessDeniedError as b_err:
+                logger.warning("Amazon Bedrock access denied or account verification pending: %s", b_err)
                 explanation_data = {
                     "status": "fallback",
                     "plain_language_explanation": "Amazon Bedrock access denied or account verification pending; showing deterministic static WCAG guidance.",
@@ -315,7 +386,53 @@ async def analyze_finding(payload: AnalyzeFindingRequest):
                     "fallback_reason": "access_denied_or_verification_pending",
                     "error": str(b_err),
                 }
+            except BedrockAuthError as b_err:
+                logger.warning("Amazon Bedrock authentication failed (session expired or invalid credentials): %s", b_err)
+                explanation_data = {
+                    "status": "fallback",
+                    "plain_language_explanation": "Amazon Bedrock session expired or credentials invalid; showing deterministic static WCAG guidance.",
+                    "why_it_matters": static_guidance.get("summary", ""),
+                    "proposed_remediation": static_guidance.get("standard_fix", ""),
+                    "validation_steps": [static_guidance.get("verification_step", "")],
+                    "limitations": "Advisory suggestion only. Code was not modified on the live website.",
+                    "confidence": "deterministic_static",
+                    "provider": "static_fallback",
+                    "is_llm_generated": False,
+                    "fallback_reason": "auth_error",
+                    "error": str(b_err),
+                }
+            except BedrockInvalidModelError as b_err:
+                logger.warning("Amazon Bedrock model or region error: %s", b_err)
+                explanation_data = {
+                    "status": "fallback",
+                    "plain_language_explanation": "Configured Amazon Bedrock model or inference profile unavailable; showing deterministic static WCAG guidance.",
+                    "why_it_matters": static_guidance.get("summary", ""),
+                    "proposed_remediation": static_guidance.get("standard_fix", ""),
+                    "validation_steps": [static_guidance.get("verification_step", "")],
+                    "limitations": "Advisory suggestion only. Code was not modified on the live website.",
+                    "confidence": "deterministic_static",
+                    "provider": "static_fallback",
+                    "is_llm_generated": False,
+                    "fallback_reason": "invalid_model_or_region",
+                    "error": str(b_err),
+                }
+            except BedrockThrottlingError as b_err:
+                logger.warning("Amazon Bedrock rate limit exceeded: %s", b_err)
+                explanation_data = {
+                    "status": "fallback",
+                    "plain_language_explanation": "Amazon Bedrock rate limit exceeded; showing deterministic static WCAG guidance.",
+                    "why_it_matters": static_guidance.get("summary", ""),
+                    "proposed_remediation": static_guidance.get("standard_fix", ""),
+                    "validation_steps": [static_guidance.get("verification_step", "")],
+                    "limitations": "Advisory suggestion only. Code was not modified on the live website.",
+                    "confidence": "deterministic_static",
+                    "provider": "static_fallback",
+                    "is_llm_generated": False,
+                    "fallback_reason": "throttled",
+                    "error": str(b_err),
+                }
             except (BedrockError, Exception) as b_err:
+                logger.warning("Amazon Bedrock explanation service error: %s", b_err)
                 explanation_data = {
                     "status": "fallback",
                     "plain_language_explanation": "Amazon Bedrock explanation unavailable; showing deterministic static WCAG guidance.",
@@ -370,62 +487,62 @@ async def run_scan(payload: ScanRequest, request: Request):
             )
 
     # 0. Check for Local Fixture Mode (for reproducible demo & offline verification)
-    if payload.url.startswith("fixture:") or "/fixtures/" in payload.url:
-        fixture_clean = payload.url.split("/fixtures/")[-1].replace("fixture:", "").strip()
-        fixture_filename = f"{fixture_clean}.html" if not fixture_clean.endswith(".html") else fixture_clean
-        target_fixture_path = FIXTURES_DIR / fixture_filename
-        if not target_fixture_path.exists():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Local civic fixture '{fixture_filename}' not found.",
-            )
-        fixture_html = target_fixture_path.read_text(encoding="utf-8")
-        scanner = AccessibilityScanner(headless=True)
-        report = await asyncio.to_thread(
-            scanner.scan_html,
-            html_content=fixture_html,
-            base_url=f"fixture://{fixture_filename}",
-        )
-        report.engine = "axe-core 4.13.0 via Playwright (Local Civic Fixture Mode)"
-        scan_id = save_scan(report)
-        result_dict = report.to_dict()
-        result_dict["id"] = scan_id
-        result_dict["is_fixture"] = True
-        result_dict["fixture_name"] = fixture_filename
-        return result_dict
+    is_fixture = payload.url.startswith("fixture:") or "/fixtures/" in payload.url
+    target_fixture_path = None
+    fixture_filename = ""
+    if is_fixture:
+        target_fixture_path, fixture_filename = resolve_secure_fixture_path(payload.url)
 
-    # 1. Enforce Server-Side URL Validation & SSRF Guard BEFORE touching browser or network
+    # 1. Enforce Server-Side URL Validation & SSRF Guard BEFORE touching browser or acquiring semaphore
     allow_local = payload.allow_local or bool(os.environ.get("ACCESSLENS_ALLOW_LOCAL", False))
-    try:
-        validated_url = URLValidator.validate_url(payload.url, allow_local=allow_local)
-    except SecurityError as sec_err:
-        # Save security block to history for audit trail
-        block_report = ScanReport(
-            status="SECURITY_BLOCKED",
-            url=payload.url,
-            final_url=payload.url,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            duration_ms=0.0,
-            error=str(sec_err),
-            error_category="SECURITY_VIOLATION",
-        )
-        scan_id = save_scan(block_report)
-        block_dict = block_report.to_dict()
-        block_dict["id"] = scan_id
-        return block_dict
-
-    # 2. Acquire semaphore to cap concurrent Playwright Chromium instances
-    try:
-        acquired = False
+    validated_url = payload.url
+    if not is_fixture:
         try:
-            # Wait up to 5 seconds for a scanner slot
-            await asyncio.wait_for(SCAN_SEMAPHORE.acquire(), timeout=5.0)
+            validated_url = URLValidator.validate_url(payload.url, allow_local=allow_local)
+        except SecurityError as sec_err:
+            # Save security block to history for audit trail
+            block_report = ScanReport(
+                status="SECURITY_BLOCKED",
+                url=payload.url,
+                final_url=payload.url,
+                timestamp=datetime.now(timezone.utc).isoformat(),
+                duration_ms=0.0,
+                error=str(sec_err),
+                error_category="SECURITY_VIOLATION",
+            )
+            scan_id = save_scan(block_report)
+            block_dict = block_report.to_dict()
+            block_dict["id"] = scan_id
+            return block_dict
+
+    # 2. Acquire semaphore to cap concurrent Playwright Chromium instances (both live and fixture scans)
+    acquired = False
+    try:
+        try:
+            # Wait up to 10 seconds for a scanner slot
+            await asyncio.wait_for(SCAN_SEMAPHORE.acquire(), timeout=10.0)
             acquired = True
         except asyncio.TimeoutError:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="All scanner workers are currently busy. Please retry in a few moments.",
             )
+
+        if is_fixture and target_fixture_path is not None:
+            fixture_html = target_fixture_path.read_text(encoding="utf-8")
+            scanner = AccessibilityScanner(headless=True)
+            report = await asyncio.to_thread(
+                scanner.scan_html,
+                html_content=fixture_html,
+                base_url=f"fixture://{fixture_filename}",
+            )
+            report.engine = "axe-core 4.13.0 via Playwright (Local Civic Fixture Mode)"
+            scan_id = save_scan(report)
+            result_dict = report.to_dict()
+            result_dict["id"] = scan_id
+            result_dict["is_fixture"] = True
+            result_dict["fixture_name"] = fixture_filename
+            return result_dict
 
         # 3. Execute real Playwright scan in threadpool to keep FastAPI async loop responsive
         scanner = AccessibilityScanner(
